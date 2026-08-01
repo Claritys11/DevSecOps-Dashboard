@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-devsecops_dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-devsecops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devsecops}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-devsecops} -d $${POSTGRES_DB:-devsecops_dashboard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:-devsecops}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_SECRET: ${AUTH_SECRET:-replace-with-openssl-rand-base64-32}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-now}
+      SEED_HOMELAB_EXAMPLES: ${SEED_HOMELAB_EXAMPLES:-false}
+      SEED_ENDPOINTS_JSON: ${SEED_ENDPOINTS_JSON:-}
+      DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+      UBUNTU_NSPAWN_DOCKER_ENDPOINT: ${UBUNTU_NSPAWN_DOCKER_ENDPOINT:-}
+      DASHBOARD_HEALTH_URL: ${DASHBOARD_HEALTH_URL:-http://localhost:3000/api/health}
+      COOLIFY_STATUS_URL: ${COOLIFY_STATUS_URL:-http://localhost:8000}
+      MONITORING_DEFAULT_TIMEOUT_MS: ${MONITORING_DEFAULT_TIMEOUT_MS:-5000}
+      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-true}
+      CACHYOS_AGENT_ID: ${CACHYOS_AGENT_ID:-cachyos-host-agent}
+      CACHYOS_AGENT_TOKEN: ${CACHYOS_AGENT_TOKEN:-change-me-cachyos-agent-token}
+      UBUNTU_NSPAWN_AGENT_ID: ${UBUNTU_NSPAWN_AGENT_ID:-ubuntu-nspawn-agent}
+      UBUNTU_NSPAWN_AGENT_TOKEN: ${UBUNTU_NSPAWN_AGENT_TOKEN:-change-me-ubuntu-nspawn-agent-token}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+  monitor-worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["npm", "run", "worker:monitor"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:-devsecops}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
+      MONITORING_DEFAULT_TIMEOUT_MS: ${MONITORING_DEFAULT_TIMEOUT_MS:-5000}
+      MONITOR_WORKER_POLL_SECONDS: ${MONITOR_WORKER_POLL_SECONDS:-15}
+      MONITOR_WORKER_LOCK_SECONDS: ${MONITOR_WORKER_LOCK_SECONDS:-45}
+      MONITOR_WORKER_BATCH_SIZE: ${MONITOR_WORKER_BATCH_SIZE:-10}
+      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-true}
+
+volumes:
+  postgres-data:

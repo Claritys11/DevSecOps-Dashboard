@@ -1,0 +1,24 @@
+[Unit]
+Description=DevSecOps Dashboard Monitoring Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=devsecops-agent
+Group=devsecops-agent
+EnvironmentFile=/etc/devsecops-agent.env
+ExecStart=/usr/local/bin/devsecops-agent
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/proc /sys /etc/os-release
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

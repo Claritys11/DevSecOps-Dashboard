@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MAINTAINER
+  VIEWER
+}
+
+enum ServerStatus {
+  ONLINE
+  DEGRADED
+  OFFLINE
+  UNKNOWN
+}
+
+enum ServerRuntime {
+  HOST
+  SYSTEMD_NSPAWN
+  DOCKER_HOST
+  REMOTE
+}
+
+enum ContainerProtectionLevel {
+  PROTECTED
+  MANAGED
+  UNMANAGED
+  EPHEMERAL
+}
+
+enum ServiceStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNKNOWN
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertRuleType {
+  SERVER_OFFLINE
+  AGENT_STALE
+  ENDPOINT_DOWN
+  CONTAINER_EXITED
+  HIGH_CPU
+  HIGH_MEMORY
+  HIGH_DISK
+  SSL_EXPIRING
+}
+
+enum AlertResourceType {
+  SERVER
+  ENDPOINT
+  CONTAINER
+  SSL_CERTIFICATE
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  CONTAINER_RESTART
+  CONTAINER_STOP
+  CONTAINER_DELETE
+  ENDPOINT_CHECK
+  SSL_CHECK
+  SETTINGS_UPDATE
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(VIEWER)
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Server {
+  id             String           @id @default(cuid())
+  name           String
+  hostname       String
+  os             String?
+  kernel         String?
+  architecture   String?
+  description    String?
+  environment    String           @default("homelab")
+  runtime        ServerRuntime    @default(REMOTE)
+  machinePath    String?
+  dockerEndpoint String?
+  status         ServerStatus     @default(UNKNOWN)
+  agentVersion   String?
+  lastHeartbeatAt DateTime?
+  lastMetricAt    DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  agentCredential AgentCredential?
+  metrics        ServerMetric[]
+  containers     ContainerRecord[]
+  endpoints      MonitoredEndpoint[]
+}
+
+model ServerMetric {
+  id              String   @id @default(cuid())
+  serverId        String
+  hostname        String
+  os              String
+  kernel          String
+  architecture    String
+  uptimeSeconds   BigInt
+  cpuUsagePercent Float
+  cpuCoreCount     Int
+  memoryUsedMb    Float
+  memoryTotalMb   Float
+  memoryUsagePercent Float
+  swapUsedMb      Float   @default(0)
+  swapTotalMb     Float   @default(0)
+  storageUsedGb   Float
+  storageTotalGb  Float
+  storageUsagePercent Float
+  loadAverage1    Float
+  loadAverage5    Float
+  loadAverage15   Float
+  networkRxBytes  BigInt
+  networkTxBytes  BigInt
+  agentVersion    String
+  collectionId    String
+  collectedAt     DateTime
+  receivedAt      DateTime @default(now())
+  server          Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, collectionId])
+  @@index([serverId, collectedAt])
+  @@index([collectedAt])
+}
+
+model AgentCredential {
+  id          String   @id @default(cuid())
+  agentId     String   @unique
+  serverId    String   @unique
+  tokenHash   String
+  name        String?
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  nonces      AgentNonce[]
+}
+
+model AgentNonce {
+  id            String          @id @default(cuid())
+  credentialId  String
+  nonce         String
+  timestamp     DateTime
+  createdAt     DateTime        @default(now())
+  credential    AgentCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@unique([credentialId, nonce])
+  @@index([createdAt])
+}
+
+model ContainerRecord {
+  id          String    @id @default(cuid())
+  serverId    String
+  dockerId    String
+  name        String
+  image       String
+  state       String
+  status      String
+  protectionLevel ContainerProtectionLevel @default(UNMANAGED)
+  protectionOverride Boolean @default(false)
+  ports       Json?
+  labels      Json?
+  lastSeenAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, dockerId])
+}
+
+model ContainerActionIdempotency {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  serverId    String
+  containerId String
+  action      String
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model MonitoredEndpoint {
+  id             String          @id @default(cuid())
+  serverId       String?
+  name           String
+  url            String
+  expectedStatus Int             @default(200)
+  status         ServiceStatus   @default(UNKNOWN)
+  enabled        Boolean         @default(true)
+  intervalSeconds Int            @default(60)
+  timeoutMs      Int             @default(5000)
+  consecutiveFailures Int        @default(0)
+  lastCheckedAt  DateTime?
+  lastSuccessAt  DateTime?
+  nextCheckAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  server         Server?         @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  checks         EndpointCheck[]
+  sslChecks      SslCertificateCheck[]
+
+  @@index([enabled, nextCheckAt])
+}
+
+model EndpointCheck {
+  id             String            @id @default(cuid())
+  endpointId     String
+  status         ServiceStatus
+  statusCode     Int?
+  responseTimeMs Int?
+  error          String?
+  checkedAt      DateTime          @default(now())
+  endpoint       MonitoredEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, checkedAt])
+}
+
+model SslCertificateCheck {
+  id                String            @id @default(cuid())
+  endpointId        String
+  issuer            String?
+  validFrom         DateTime?
+  validTo           DateTime?
+  daysUntilExpiry   Int?
+  fingerprint       String?
+  status            ServiceStatus     @default(UNKNOWN)
+  error             String?
+  checkedAt         DateTime          @default(now())
+  endpoint          MonitoredEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, checkedAt])
+}
+
+model SchedulerLock {
+  id          String   @id
+  owner       String
+  lockedUntil DateTime
+  updatedAt   DateTime @updatedAt
+}
+
+model Alert {
+  id                String            @id @default(cuid())
+  fingerprint       String            @unique
+  ruleType          AlertRuleType
+  resourceType      AlertResourceType
+  resourceId        String
+  title             String
+  message           String
+  severity          AlertSeverity     @default(INFO)
+  observedValue     String?
+  thresholdValue    String?
+  occurrenceCount   Int               @default(1)
+  triggeredAt       DateTime          @default(now())
+  lastObservedAt    DateTime          @default(now())
+  resolvedAt        DateTime?
+  acknowledgedAt    DateTime?
+  acknowledgedById  String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([resolvedAt, severity])
+  @@index([ruleType, resourceType, resourceId])
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  userId      String?
+  action      AuditAction
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}
