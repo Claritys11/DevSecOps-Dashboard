@@ -44,7 +44,7 @@ const rl = createInterface({ input, output });
 
 try {
   let env = readFileSync(examplePath, "utf8");
-  const appUrl = await ask(rl, "Public app URL", "http://localhost:3000");
+  const appUrl = await ask(rl, "Public app URL", "http://localhost:3003");
   const adminEmail = await ask(rl, "Admin email", "admin@example.com");
   const adminPassword = yes ? token() : await ask(rl, "Admin password", token());
   const postgresPassword = yes ? token() : await ask(rl, "Postgres password", token());
