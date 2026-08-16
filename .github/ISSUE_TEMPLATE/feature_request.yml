@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operator problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the smallest useful version.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Area
+      options:
+        - Dashboard UI
+        - API/backend
+        - Agent
+        - Deployment
+        - Security
+        - Documentation
+        - CI/release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility And Security Notes
+      description: Include config, migration, auth, SSRF, Docker socket, or trust-boundary impact if relevant.

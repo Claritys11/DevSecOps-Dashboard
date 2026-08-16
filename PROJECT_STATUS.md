@@ -1,78 +1,43 @@
 # Project Status
 
-## Current State
+DevSecOps Dashboard is a working MVP self-hosted monitoring platform.
 
-DevSecOps Dashboard is now a working MVP-plus homelab monitoring platform.
+## Implemented
 
-Implemented:
-
-- Authentication and roles: `ADMIN`, `MAINTAINER`, `VIEWER`.
-- Server inventory for CachyOS host and Ubuntu `systemd-nspawn`.
-- Go monitoring agent with outbound metrics push.
-- Agent heartbeat and metrics ingestion APIs.
-- Token hashing, timestamp validation, nonce replay protection, body hash validation.
-- Metrics retention cleanup.
+- Authentication with roles: `ADMIN`, `MAINTAINER`, `VIEWER`.
+- Go monitoring agent with outbound heartbeat and metrics push.
+- Agent token hashing, timestamp validation, nonce replay protection, and body hash validation.
 - Server metrics UI and historical charts.
-- Docker container inventory separated between CachyOS host and Ubuntu nspawn.
-- Container logs, restart, stop, delete.
-- Container safety and protection levels.
-- Manual container protection override.
-- HTTP and SSL monitoring, both manual and scheduled.
-- Basic alert engine with fingerprint deduplication.
-- Alert rules: `SERVER_OFFLINE`, `AGENT_STALE`, `ENDPOINT_DOWN`, `CONTAINER_EXITED`, `HIGH_CPU`, `HIGH_MEMORY`, `HIGH_DISK`, `SSL_EXPIRING`.
-- Alert acknowledgement for admin and maintainer users.
-- PostgreSQL scheduler lock for duplicate job prevention.
+- HTTP endpoint and SSL certificate monitoring.
+- Alert fingerprint deduplication and acknowledgement.
+- Docker container inventory and guarded actions when Docker access is explicitly configured.
 - Audit logging for sensitive actions.
-- Docker deployment assets.
-- GitHub-ready first-run automation.
-- Interactive `.env` bootstrap with generated secrets.
-- Docker entrypoint for automatic production migration and seed.
-- Portable seed mode with optional homelab example endpoints and custom endpoint JSON.
-- GitHub Actions CI for app validation and agent tests.
+- Docker Compose deployment assets.
+- Environment bootstrap and preflight validation.
+- CI covering app checks, Go tests, Compose config, image build, secret scanning, and dependency checks.
 
-## Verified
+## Current Hardening Direction
 
-Latest verified commands:
-
-```bash
-npm run lint
-npm run build
-cd agent && go test ./...
-```
-
-Verified behavior:
-
-- Valid agent heartbeat accepted.
-- Valid agent metrics accepted and stored in PostgreSQL.
-- Invalid agent token rejected.
-- Replay nonce rejected.
-- Duplicate metric collection ID rejected.
-- CachyOS host agent sent real metrics.
-- Ubuntu nspawn agent sent real metrics.
-- Monitor worker checked all seeded endpoints.
-- Duplicate scheduler lock prevented duplicate worker run.
-- Host and Ubuntu nspawn containers are separated.
-- Protected container actions are blocked.
-- Manual protection override survives live Docker sync.
-- Alert fingerprints prevent duplicate active alerts.
-- Real exited containers create actionable active alerts.
-- `npm run setup` does not overwrite an existing `.env` unless `--force` is used.
-- Docker runner image builds successfully with the production entrypoint.
+- Production configuration fails closed for required secrets.
+- PostgreSQL is private by default in production Compose.
+- Private-network endpoint monitoring is disabled by default.
+- Docker socket access is an explicit privileged override.
+- Production database seeding is opt-in.
 
 ## Known Gaps
 
-- Container action UI uses browser prompts; a proper modal is better.
+- Container action UI uses browser prompts.
 - Role management UI is not implemented.
-- Agent HMAC signing is prepared conceptually but current implementation uses token hash + body hash headers.
-- Endpoint SSRF protection is basic and homelab-friendly; private networks are allowed by default.
-- Production image favors reliable automatic seed/migration over minimal image size.
+- Agent HMAC signing is not implemented; current protection uses token hash plus timestamp, nonce, and body hash headers.
+- DNS rebinding cannot be fully prevented by application-level URL validation.
+- Formal release automation and signed artifacts are not implemented.
 
 ## Recommended Next Milestone
 
-Improve operations UX:
+Improve operations UX and release maturity:
 
-- Replace browser prompts for container actions with proper confirmation modals.
+- Replace browser prompts for container actions with confirmation modals.
 - Add role and user management pages.
 - Add notification channels for active alerts.
-- Add deployment history from Coolify and GitHub Actions.
-- Add a public/read-only status page.
+- Add release packaging, signed artifacts, and release notes automation.
+- Expand authorization and Docker safety tests.
