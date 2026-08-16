@@ -1,14 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function AcknowledgeAlertButton({ alertId }: { alertId: string }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function acknowledge() {
+    setError(null);
+    setPending(true);
+    try {
+      const response = await fetch(`/api/alerts/${alertId}/ack`, { method: "POST" });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(body?.error ?? "Unable to acknowledge alert");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <div className="space-y-1">
@@ -16,18 +32,9 @@ export function AcknowledgeAlertButton({ alertId }: { alertId: string }) {
         type="button"
         variant="secondary"
         disabled={pending}
-        onClick={() =>
-          startTransition(async () => {
-            setError(null);
-            const response = await fetch(`/api/alerts/${alertId}/ack`, { method: "POST" });
-            if (!response.ok) {
-              const body = (await response.json().catch(() => null)) as { error?: string } | null;
-              setError(body?.error ?? "Unable to acknowledge alert");
-              return;
-            }
-            router.refresh();
-          })
-        }
+        loading={pending}
+        loadingLabel="Ack..."
+        onClick={acknowledge}
       >
         <CheckCircle2 className="size-4" />
         Ack

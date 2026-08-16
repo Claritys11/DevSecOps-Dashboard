@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Container, Gauge, GlobeLock, LogOut, Server, ShieldCheck } from "lucide-react";
 import { auth, signOut } from "@/auth";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 
 const nav = [
   { href: "/", label: "Overview", icon: Gauge },
@@ -48,7 +48,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <p className="text-xs text-muted-foreground">{session.user.role}</p>
           </div>
           <form action={logoutAction}>
-            <Button type="submit" variant="secondary"><LogOut className="size-4" /> Logout</Button>
+            <FormSubmitButton variant="secondary" pendingLabel="Logging out..."><LogOut className="size-4" /> Logout</FormSubmitButton>
           </form>
         </header>
         <main className="p-4 lg:p-8">{children}</main>

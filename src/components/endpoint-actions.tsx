@@ -1,18 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Power, PowerOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function EndpointActions({ endpointId, enabled }: { endpointId: string; enabled: boolean }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<"check" | "toggle" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pending = pendingAction !== null;
 
-  function runCheck() {
+  async function runCheck() {
     setError(null);
-    startTransition(async () => {
+    setPendingAction("check");
+    try {
       const response = await fetch(`/api/endpoints/${endpointId}/check`, { method: "POST" });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -20,12 +22,15 @@ export function EndpointActions({ endpointId, enabled }: { endpointId: string; e
         return;
       }
       router.refresh();
-    });
+    } finally {
+      setPendingAction(null);
+    }
   }
 
-  function toggleEnabled() {
+  async function toggleEnabled() {
     setError(null);
-    startTransition(async () => {
+    setPendingAction("toggle");
+    try {
       const response = await fetch("/api/endpoints", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -37,17 +42,25 @@ export function EndpointActions({ endpointId, enabled }: { endpointId: string; e
         return;
       }
       router.refresh();
-    });
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={pending} onClick={runCheck}>
+        <Button variant="secondary" disabled={pending} loading={pendingAction === "check"} loadingLabel="Checking..." onClick={runCheck}>
           <RefreshCw className="size-4" />
           Check
         </Button>
-        <Button variant={enabled ? "secondary" : "primary"} disabled={pending} onClick={toggleEnabled}>
+        <Button
+          variant={enabled ? "secondary" : "primary"}
+          disabled={pending}
+          loading={pendingAction === "toggle"}
+          loadingLabel={enabled ? "Disabling..." : "Enabling..."}
+          onClick={toggleEnabled}
+        >
           {enabled ? <PowerOff className="size-4" /> : <Power className="size-4" />}
           {enabled ? "Disable" : "Enable"}
         </Button>
