@@ -1,0 +1,11 @@
+services:
+  app:
+    profiles: ["docker-socket"]
+    environment:
+      ENABLE_DOCKER_SOCKET: "true"
+      DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+    volumes:
+      - type: bind
+        source: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        read_only: true

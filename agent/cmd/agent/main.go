@@ -16,7 +16,11 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("invalid agent configuration", "error", err)
+		os.Exit(1)
+	}
 	api := client.New(cfg.DashboardURL, cfg.AgentID, cfg.AgentSecret, cfg.Timeout)
 	system := &collector.Collector{}
 

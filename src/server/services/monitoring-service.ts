@@ -6,16 +6,22 @@ import { differenceInCalendarDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { evaluateEndpointAlert, evaluateSslAlert } from "@/server/services/alert-service";
 
-const defaultTimeoutMs = Number(process.env.MONITORING_DEFAULT_TIMEOUT_MS ?? 5000);
-const allowPrivateNetworks = process.env.MONITOR_ALLOW_PRIVATE_NETWORKS !== "false";
-const redirectLimit = Number(process.env.MONITOR_REDIRECT_LIMIT ?? 3);
+const cloudMetadataAddresses = new Set(["169.254.169.254", "100.100.100.200"]);
+
+function monitoringConfig() {
+  return {
+    defaultTimeoutMs: Number(process.env.MONITORING_DEFAULT_TIMEOUT_MS ?? 5000),
+    allowPrivateNetworks: process.env.MONITOR_ALLOW_PRIVATE_NETWORKS === "true",
+    redirectLimit: Number(process.env.MONITOR_REDIRECT_LIMIT ?? 3)
+  };
+}
 
 export async function checkEndpoint(endpointId: string) {
   const endpoint = await prisma.monitoredEndpoint.findUniqueOrThrow({ where: { id: endpointId } });
   const started = Date.now();
 
   try {
-    const response = await guardedFetch(endpoint.url, endpoint.timeoutMs ?? defaultTimeoutMs);
+    const response = await guardedFetch(endpoint.url, endpoint.timeoutMs ?? monitoringConfig().defaultTimeoutMs);
     const responseTimeMs = Date.now() - started;
     const status = response.status === endpoint.expectedStatus ? ServiceStatus.HEALTHY : ServiceStatus.DEGRADED;
     const isSuccess = status === ServiceStatus.HEALTHY;
@@ -92,7 +98,7 @@ export async function checkSslCertificate(endpointId: string): Promise<SslCertif
         host: url.hostname,
         port: Number(url.port || 443),
         servername: url.hostname,
-        timeout: endpoint.timeoutMs ?? defaultTimeoutMs
+        timeout: endpoint.timeoutMs ?? monitoringConfig().defaultTimeoutMs
       },
       async () => {
         const cert = socket.getPeerCertificate();
@@ -147,8 +153,9 @@ export async function checkSslCertificate(endpointId: string): Promise<SslCertif
   });
 }
 
-async function guardedFetch(initialUrl: string, requestTimeoutMs: number) {
+export async function guardedFetch(initialUrl: string, requestTimeoutMs: number) {
   let currentUrl = initialUrl;
+  const { redirectLimit } = monitoringConfig();
 
   for (let redirectCount = 0; redirectCount <= redirectLimit; redirectCount++) {
     await validateMonitorUrl(currentUrl);
@@ -170,7 +177,7 @@ async function guardedFetch(initialUrl: string, requestTimeoutMs: number) {
   throw new Error("Redirect limit exceeded");
 }
 
-async function validateMonitorUrl(rawUrl: string) {
+export async function validateMonitorUrl(rawUrl: string) {
   const url = new URL(rawUrl);
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Only HTTP and HTTPS monitors are allowed");
@@ -182,28 +189,28 @@ async function validateMonitorUrl(rawUrl: string) {
   }
 
   for (const address of addresses) {
-    if (isBlockedAddress(address.address)) {
+    if (isBlockedAddress(address.address, monitoringConfig().allowPrivateNetworks)) {
       throw new Error("Blocked monitor target address");
     }
   }
 }
 
-function isBlockedAddress(address: string) {
-  if (address === "169.254.169.254" || address === "100.100.100.200") {
+export function isBlockedAddress(address: string, allowPrivateNetworks = process.env.MONITOR_ALLOW_PRIVATE_NETWORKS === "true") {
+  if (cloudMetadataAddresses.has(address)) {
     return true;
   }
-
-  if (allowPrivateNetworks) return false;
 
   const version = net.isIP(address);
   if (version === 4) {
     const [a, b] = address.split(".").map(Number);
-    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a === 127 || (a === 169 && b === 254);
+    const privateOrLocal = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a === 127 || (a === 169 && b === 254);
+    return allowPrivateNetworks ? false : privateOrLocal;
   }
 
   if (version === 6) {
     const normalized = address.toLowerCase();
-    return normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80");
+    const privateOrLocal = normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80");
+    return allowPrivateNetworks ? false : privateOrLocal;
   }
 
   return false;

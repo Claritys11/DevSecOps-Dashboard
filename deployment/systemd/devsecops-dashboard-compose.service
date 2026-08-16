@@ -1,0 +1,14 @@
+[Unit]
+Description=DevSecOps Dashboard Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/devsecops-dashboard
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

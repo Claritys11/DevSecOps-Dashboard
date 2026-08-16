@@ -6,3 +6,4 @@ dist
 coverage
 *.log
 prisma/dev.db
+*.tsbuildinfo

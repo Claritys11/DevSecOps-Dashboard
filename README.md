@@ -1,388 +1,159 @@
 # DevSecOps Dashboard
 
-DevSecOps Dashboard is a self-hosted homelab operations dashboard for monitoring servers, Docker containers, HTTP endpoints, SSL certificates, agent metrics, alerts, and audit logs from one place.
+DevSecOps Dashboard is a self-hosted infrastructure monitoring dashboard for Linux hosts, Docker containers, HTTP endpoints, SSL certificates, alerts, and audit logs.
 
-It is built as a real usable portfolio project: not a static landing page, not a mock dashboard, and not tied to a single machine by default. You can run it locally, deploy it with Docker Compose, connect Linux agents, monitor your own services, and adapt the seed data for your own homelab.
+> Project maturity: this is a working MVP, not a hardened 1.0 release. It is suitable for self-hosted evaluation and contribution, but operators should review the security model, deployment docs, and configuration before exposing it to a network.
 
-## What It Does
+## Implemented Features
 
-- Tracks servers and their runtime type, including normal hosts and `systemd-nspawn` machines.
-- Collects real CPU, memory, disk, load average, uptime, and network metrics through a Go agent.
-- Lists Docker containers from the host and from an Ubuntu nspawn machine separately.
-- Supports container logs, restart, stop, and delete actions.
-- Adds container protection levels so critical containers cannot be managed accidentally.
-- Monitors HTTP endpoints manually or on a schedule.
-- Checks SSL certificate health and expiry for HTTPS endpoints.
-- Creates deduplicated alerts for server, endpoint, metric, SSL, and container problems.
-- Records sensitive actions in an audit log.
-- Ships with Docker Compose, database migrations, seed automation, and GitHub Actions CI.
+- Email/password dashboard login with role-aware server-side guards.
+- Linux host heartbeat and metrics ingestion from a Go agent.
+- Server inventory, metrics charts, endpoint checks, SSL certificate checks, alerts, and audit logs.
+- Container inventory and guarded container actions when Docker access is explicitly configured.
+- Prisma/PostgreSQL persistence with migrations and seed support.
+- Docker Compose deployment files, health checks, preflight validation, and CI.
 
-## Tech Stack
+## Planned Or Incomplete
 
-- Next.js App Router
-- React
-- TypeScript
-- Tailwind CSS
-- Prisma
-- PostgreSQL
-- NextAuth Credentials
-- Argon2id password hashing
-- Go Linux monitoring agent
-- Docker Compose
+- User and role management UI.
+- Notification channels for alerts.
+- Public/read-only status page.
+- Signed release artifacts and formal release automation.
+- Broader packaging beyond Docker Compose.
 
-## Quickstart With Docker Compose
+## Architecture
 
-This is the recommended path for most users.
-
-```bash
-npm run setup
-docker compose up -d --build
+```mermaid
+flowchart LR
+  Browser[Authenticated browser] --> App[Next.js app and API]
+  Agent[Go agent] -->|heartbeat and metrics push| App
+  App --> DB[(PostgreSQL)]
+  Worker[monitor worker] --> DB
+  Worker -->|HTTP and TLS checks| Endpoints[Configured endpoints]
+  App -. optional privileged profile .-> Docker[Docker socket or Docker endpoint]
 ```
 
-Open the dashboard:
+See [docs/architecture.md](docs/architecture.md) for component and trust-boundary details.
 
-```text
-http://localhost:3000
-```
-
-The setup command generates a local `.env` with random secrets and tokens. The app container automatically runs database migrations and seed data on startup.
-
-Useful flags:
-
-```bash
-APP_PORT=3003 docker compose up -d --build
-POSTGRES_HOST_PORT=5434 docker compose up -d postgres
-RUN_DATABASE_SEED=false docker compose up -d app
-RUN_DATABASE_MIGRATIONS=false docker compose up -d app
-```
-
-## Local Development
+## Secure Quickstart
 
 Requirements:
 
 - Node.js 22 or newer
 - npm
 - Docker and Docker Compose
-- Go 1.22 or newer, only needed for the agent
+- Go 1.22 or newer only for agent development
 
-Install dependencies:
-
-```bash
-npm install
-```
-
-Generate `.env`:
+Generate local configuration:
 
 ```bash
+npm ci
 npm run setup
+npm run preflight
 ```
 
-Start PostgreSQL:
+Start a development stack:
 
 ```bash
-docker compose up -d postgres
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-Run migrations and seed:
-
-```bash
-npm run prisma:deploy
-npm run prisma:seed
-```
-
-Start the app:
-
-```bash
-npm run dev -- -p 3003
-```
-
-Open:
+Open the dashboard at the `AUTH_URL`/`APP_PORT` you configured, commonly:
 
 ```text
 http://localhost:3003
 ```
 
-## First Login
-
-The admin account is created from:
-
-```text
-ADMIN_EMAIL
-ADMIN_PASSWORD
-```
-
-Both values are stored in `.env`. Change them before exposing the dashboard to a network.
-
-## Seed Data
-
-The default seed is portable and safe for a fresh install:
-
-- One admin user.
-- One local host server record.
-- One Ubuntu `systemd-nspawn` server record.
-- One dashboard health endpoint.
-- Two agent credentials.
-
-Homelab example endpoints are opt-in:
+Production uses the base Compose file:
 
 ```bash
-SEED_HOMELAB_EXAMPLES=true npm run prisma:seed
+docker compose up -d --build
 ```
 
-Custom endpoints can be seeded with `SEED_ENDPOINTS_JSON`:
+Production defaults fail closed for required secrets, keep PostgreSQL private to the Compose network, disable private-network endpoint monitoring, disable Docker socket access, run migrations before startup, and skip seed data unless `RUN_DATABASE_SEED=true`.
 
-```bash
-SEED_ENDPOINTS_JSON='[
-  {"name":"Docs","url":"https://example.com","expectedStatus":200},
-  {"name":"API","url":"https://api.example.com/health","expectedStatus":200,"intervalSeconds":60}
-]' npm run prisma:seed
-```
+## Screenshots
 
-## Monitoring Worker
+Screenshots are not included yet. Do not add generated or unrelated screenshots; only add current screenshots captured from the working application.
 
-Endpoint and SSL checks are performed by a worker outside the Next.js request lifecycle.
+## Supported Deployment Model
 
-Run the worker:
+The supported deployment model is Docker Compose on a Linux host:
 
-```bash
-npm run worker:monitor
-```
+- `docker-compose.yml`: production-safe base.
+- `docker-compose.dev.yml`: local development override with a published database port and homelab-friendly private monitoring.
+- `docker-compose.docker-socket.yml`: explicit privileged Docker socket override/profile.
 
-Run one scheduler pass for testing:
+See [docs/deployment.md](docs/deployment.md).
 
-```bash
-MONITOR_WORKER_RUN_ONCE=true npm run worker:monitor
-```
+## Agent Overview
 
-The worker uses the `SchedulerLock` table so multiple worker processes do not run the same scheduler cycle at the same time.
-
-## Linux Agent
-
-The Go agent lives in `agent/` and uses outbound push. The dashboard does not SSH into your servers.
+The Go agent uses outbound push:
 
 ```text
 agent -> dashboard /api/agents/heartbeat
 agent -> dashboard /api/agents/metrics
 ```
 
-Run locally:
-
-```bash
-cd agent
-cp .env.example .env
-set -a
-. ./.env
-set +a
-go run ./cmd/agent
-```
-
-Example:
-
-```bash
-DASHBOARD_URL=http://localhost:3003 \
-AGENT_ID=cachyos-host-agent \
-AGENT_SECRET=replace-with-generated-token \
-SERVER_NAME=my-linux-host \
-go run ./cmd/agent
-```
-
-For systemd deployment, see:
-
-```text
-deployment/systemd/devsecops-agent.service
-```
-
-Use a unique `AGENT_ID` and `AGENT_SECRET` per server. The dashboard stores token hashes, not raw agent secrets.
-
-## Docker And systemd-nspawn
-
-The dashboard supports two Docker sources:
-
-- Host Docker through `DOCKER_SOCKET_PATH`, usually `/var/run/docker.sock`.
-- Ubuntu nspawn Docker through `machinectl shell ubuntu /usr/bin/docker ...`.
-
-If you expose the nspawn Docker daemon separately, configure:
-
-```text
-UBUNTU_NSPAWN_DOCKER_ENDPOINT
-```
-
-Container records include `serverId`, so containers from the host and from nspawn are shown separately.
-
-## Alerts
-
-The alert engine creates fingerprinted alerts so one resource and one rule produce only one active alert.
-
-Current alert rules:
-
-- `SERVER_OFFLINE`
-- `AGENT_STALE`
-- `ENDPOINT_DOWN`
-- `CONTAINER_EXITED`
-- `HIGH_CPU`
-- `HIGH_MEMORY`
-- `HIGH_DISK`
-- `SSL_EXPIRING`
-
-Alert thresholds are configurable:
-
-```text
-ALERT_CPU_CRITICAL_PERCENT
-ALERT_MEMORY_CRITICAL_PERCENT
-ALERT_DISK_CRITICAL_PERCENT
-ALERT_SSL_EXPIRING_DAYS
-ALERT_ENDPOINT_FAILURE_THRESHOLD
-AGENT_STALE_AFTER_MINUTES
-SERVER_OFFLINE_AFTER_MINUTES
-```
+The agent requires `DASHBOARD_URL`, `AGENT_ID`, and `AGENT_SECRET`; placeholder credentials are rejected. See [docs/agent-installation.md](docs/agent-installation.md).
 
 ## Security Model
 
-Authentication and authorization:
+- Dashboard users authenticate through NextAuth credentials.
+- Agent tokens are hashed in the database and validated with timestamp, nonce, and request-body hash checks.
+- Endpoint monitoring supports only HTTP and HTTPS.
+- Private, loopback, link-local, and unique-local targets are blocked by default.
+- Cloud metadata addresses stay blocked even when private-network monitoring is enabled.
+- Redirect targets are revalidated before each fetch.
+- DNS rebinding cannot be fully eliminated by application checks; run the worker in a network context appropriate for the endpoints you trust.
+- Docker socket access is host-equivalent and disabled by default.
 
-- Email/password login with NextAuth Credentials.
-- Argon2id password hashing.
-- Roles: `ADMIN`, `MAINTAINER`, and `VIEWER`.
-- Server-side route protection.
-- Audit logs for sensitive operations.
+See [SECURITY.md](SECURITY.md) and [docs/configuration.md](docs/configuration.md).
 
-Agent protection:
+## Documentation
 
-- Token hash validation.
-- Timestamp validation.
-- Nonce replay protection.
-- Request body hash validation.
-- Payload size limits.
+- [Architecture](docs/architecture.md)
+- [Deployment](docs/deployment.md)
+- [Configuration](docs/configuration.md)
+- [Agent installation](docs/agent-installation.md)
+- [Upgrading](docs/upgrading.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Maintainer GitHub settings](docs/maintainer/github-settings.md)
+- [Contributing](CONTRIBUTING.md)
 
-Container safety:
-
-- Protected containers cannot be restarted, stopped, or deleted from the dashboard.
-- Stop, delete, and restart require an action reason.
-- Delete requires typing the container name.
-- Idempotency keys prevent repeated accidental actions.
-
-Important: mounting `/var/run/docker.sock` gives powerful access to the host. Only run the dashboard for trusted administrators, and avoid exposing it publicly without proper network protection.
-
-## Environment Variables
-
-Common app variables:
-
-```text
-DATABASE_URL
-AUTH_SECRET
-AUTH_URL
-ADMIN_EMAIL
-ADMIN_PASSWORD
-POSTGRES_DB
-POSTGRES_USER
-POSTGRES_PASSWORD
-APP_PORT
-POSTGRES_HOST_PORT
-```
-
-Monitoring variables:
-
-```text
-DASHBOARD_HEALTH_URL
-COOLIFY_STATUS_URL
-MONITORING_DEFAULT_TIMEOUT_MS
-MONITOR_WORKER_POLL_SECONDS
-MONITOR_WORKER_LOCK_SECONDS
-MONITOR_WORKER_BATCH_SIZE
-MONITOR_ALLOW_PRIVATE_NETWORKS
-MONITOR_REDIRECT_LIMIT
-METRICS_RETENTION_DAYS
-```
-
-Docker and agent variables:
-
-```text
-DOCKER_SOCKET_PATH
-UBUNTU_NSPAWN_DOCKER_ENDPOINT
-CACHYOS_AGENT_ID
-CACHYOS_AGENT_TOKEN
-UBUNTU_NSPAWN_AGENT_ID
-UBUNTU_NSPAWN_AGENT_TOKEN
-```
-
-Seed variables:
-
-```text
-SEED_HOMELAB_EXAMPLES
-SEED_ENDPOINTS_JSON
-RUN_DATABASE_MIGRATIONS
-RUN_DATABASE_SEED
-```
-
-See [.env.example](./.env.example) for the full list.
-
-## Project Structure
-
-```text
-src/app                 Next.js pages and route handlers
-src/components          React UI components
-src/server/services     Business logic for Docker, monitoring, alerts, audit, agents, and safety
-src/server/integrations External integrations such as Docker
-src/server/validators   Zod validators
-src/worker              Long-running monitoring worker
-agent                   Go monitoring agent
-prisma                  Prisma schema, migrations, and seed
-deployment              Deployment helpers such as systemd units
-scripts                 Setup and container entrypoint scripts
-```
-
-## Validation
-
-Validate the web app:
+## Development
 
 ```bash
-npm run validate
+npm ci
+npm run setup
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+npm run prisma:deploy
+npm run prisma:seed
+npm run dev -- -p 3003
 ```
 
-Test the Go agent:
+Validation:
 
 ```bash
-cd agent
-go test ./...
-```
-
-Validate Docker Compose:
-
-```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+cd agent && go test ./...
 docker compose config
-```
-
-Build the production image:
-
-```bash
 docker build --target runner -t devsecops-dashboard:local .
-```
-
-## CI
-
-GitHub Actions runs:
-
-- `npm ci`
-- `npm run setup -- --yes`
-- `npm run validate`
-- `go test ./...` inside `agent/`
-
-Workflow file:
-
-```text
-.github/workflows/ci.yml
 ```
 
 ## Roadmap
 
-- Replace browser prompts with polished confirmation modals for container actions.
-- Add user and role management screens.
-- Add notification channels for alerts.
-- Add Coolify and GitHub Actions deployment history.
-- Add a public read-only status page.
-- Add packaged agent releases.
-- Add screenshots and demo data for the public README.
+Near-term work should focus on:
+
+- cleaner user and role administration;
+- alert notification channels;
+- release packaging and signed artifacts;
+- expanded tests around authorization and Docker safety;
+- better UI flows for sensitive container actions.
 
 ## License
 
-No license has been selected yet. Add a license before publishing if you want other people to use, fork, or contribute to the project clearly.
+Apache-2.0. See [LICENSE](LICENSE).

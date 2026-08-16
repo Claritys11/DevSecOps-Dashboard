@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 const levels = ["PROTECTED", "MANAGED", "UNMANAGED", "EPHEMERAL"] as const;
 
@@ -19,16 +19,17 @@ export function ContainerProtectionControl({
   overridden: boolean;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function updateProtection(protectionLevel: string) {
+  async function updateProtection(protectionLevel: string) {
     if (protectionLevel === value) return;
     const reason = window.prompt(`Reason for changing protection on ${containerName}`);
     if (!reason) return;
 
     setError(null);
-    startTransition(async () => {
+    setPending(true);
+    try {
       const response = await fetch(`/api/servers/${serverId}/containers/${containerId}/protection`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -40,7 +41,9 @@ export function ContainerProtectionControl({
         return;
       }
       router.refresh();
-    });
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
@@ -55,7 +58,7 @@ export function ContainerProtectionControl({
           <option key={level} value={level}>{level}</option>
         ))}
       </select>
-      <p className="text-xs text-muted-foreground">{overridden ? "Manual" : "Auto"}</p>
+      <p className="text-xs text-muted-foreground">{pending ? "Saving..." : overridden ? "Manual" : "Auto"}</p>
       {error && <p className="max-w-40 text-xs text-rose-700">{error}</p>}
     </div>
   );

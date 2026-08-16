@@ -8,11 +8,14 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "preflight": "tsx src/server/config/preflight.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
-    "validate": "npm run lint && npm run build",
+    "validate": "npm run lint && npm run typecheck && npm run test && npm run build",
     "worker:monitor": "tsx src/worker/monitor-scheduler.ts"
   },
   "dependencies": {

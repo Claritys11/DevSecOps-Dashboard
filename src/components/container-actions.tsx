@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { RotateCcw, ScrollText, Square, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+type ContainerAction = "restart" | "stop" | "delete";
 
 export function ContainerActions({
   serverId,
@@ -18,11 +20,12 @@ export function ContainerActions({
   protectionLevel: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<ContainerAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isProtected = protectionLevel === "PROTECTED";
+  const pending = pendingAction !== null;
 
-  function runAction(path: "restart" | "stop" | "delete", method: "POST" | "DELETE") {
+  async function runAction(path: ContainerAction, method: "POST" | "DELETE") {
     if (isProtected) {
       setError("Protected containers cannot be managed from the dashboard");
       return;
@@ -41,7 +44,8 @@ export function ContainerActions({
     }
 
     setError(null);
-    startTransition(async () => {
+    setPendingAction(path);
+    try {
       const response = await fetch(`/api/servers/${serverId}/containers/${containerId}/${path}`, {
         method,
         headers: { "content-type": "application/json" },
@@ -57,7 +61,9 @@ export function ContainerActions({
         return;
       }
       router.refresh();
-    });
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   return (
@@ -66,15 +72,36 @@ export function ContainerActions({
         <Link href={`/containers/${serverId}/${containerId}`}>
           <Button type="button" variant="secondary"><ScrollText className="size-4" /> Logs</Button>
         </Link>
-        <Button type="button" variant="secondary" disabled={pending || isProtected} onClick={() => runAction("stop", "POST")}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={pending || isProtected}
+          loading={pendingAction === "stop"}
+          loadingLabel="Stopping..."
+          onClick={() => runAction("stop", "POST")}
+        >
           <Square className="size-4" />
           Stop
         </Button>
-        <Button type="button" variant="danger" disabled={pending || isProtected} onClick={() => runAction("restart", "POST")}>
+        <Button
+          type="button"
+          variant="danger"
+          disabled={pending || isProtected}
+          loading={pendingAction === "restart"}
+          loadingLabel="Restarting..."
+          onClick={() => runAction("restart", "POST")}
+        >
           <RotateCcw className="size-4" />
           Restart
         </Button>
-        <Button type="button" variant="danger" disabled={pending || isProtected} onClick={() => runAction("delete", "DELETE")}>
+        <Button
+          type="button"
+          variant="danger"
+          disabled={pending || isProtected}
+          loading={pendingAction === "delete"}
+          loadingLabel="Deleting..."
+          onClick={() => runAction("delete", "DELETE")}
+        >
           <Trash2 className="size-4" />
           Delete
         </Button>

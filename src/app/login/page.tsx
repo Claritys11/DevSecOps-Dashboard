@@ -2,7 +2,7 @@ import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { signIn } from "@/auth";
-import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 
 async function loginAction(formData: FormData) {
   "use server";
@@ -43,7 +43,7 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<{ er
             <input className="mt-1 h-10 w-full rounded border bg-background px-3" type="password" name="password" required />
           </label>
           <LoginError searchParams={searchParams} />
-          <Button className="w-full" type="submit">Sign in</Button>
+          <FormSubmitButton className="w-full" pendingLabel="Signing in...">Sign in</FormSubmitButton>
         </form>
       </div>
     </main>
