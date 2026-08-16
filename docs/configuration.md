@@ -13,6 +13,44 @@ Configuration is loaded from environment variables. Run `npm run preflight` befo
 | `ADMIN_PASSWORD` | Initial admin password for manual seed. Passed to app. |
 | `POSTGRES_PASSWORD` | PostgreSQL password. Passed to Postgres, app, and worker. |
 
+## Generating Values
+
+For a fresh local `.env`, the easiest path is:
+
+```bash
+npm run setup -- --force
+```
+
+This regenerates `.env` with random `AUTH_SECRET`, `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`, and `PRIMARY_AGENT_TOKEN`. Save the generated values somewhere private before replacing or deleting the file.
+
+To generate individual values manually:
+
+```bash
+openssl rand -base64 32
+```
+
+Use separate generated values for:
+
+- `AUTH_SECRET`
+- `POSTGRES_PASSWORD`
+- `ADMIN_PASSWORD`
+- `PRIMARY_AGENT_TOKEN`
+- any optional `SECONDARY_AGENT_TOKEN`
+
+`AUTH_URL` should be the URL users open in the browser, for example `http://localhost:3003` for local development or `https://dashboard.example.com` for production.
+
+`DATABASE_URL` must match the PostgreSQL values. For local development with the dev Compose override:
+
+```text
+DATABASE_URL="postgresql://devsecops:<POSTGRES_PASSWORD>@localhost:5433/devsecops_dashboard?schema=public"
+```
+
+Inside the production Compose network the app uses the service hostname automatically:
+
+```text
+postgresql://devsecops:<POSTGRES_PASSWORD>@postgres:5432/devsecops_dashboard?schema=public
+```
+
 ## Runtime Settings
 
 | Variable | Default | Notes |
