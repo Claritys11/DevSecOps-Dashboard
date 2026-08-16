@@ -1,0 +1,20 @@
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+
+  app:
+    environment:
+      NODE_ENV: development
+      SKIP_PREFLIGHT: ${SKIP_PREFLIGHT:-false}
+      RUN_DATABASE_SEED: ${RUN_DATABASE_SEED:-true}
+      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  monitor-worker:
+    environment:
+      NODE_ENV: development
+      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

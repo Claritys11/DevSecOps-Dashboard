@@ -60,8 +60,12 @@ function parseCustomEndpoints(serverId: string): SeedEndpoint[] {
 }
 
 async function main() {
-  const email = process.env.ADMIN_EMAIL ?? "admin@example.com";
-  const password = process.env.ADMIN_PASSWORD ?? "change-me-now";
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD are required to seed the initial admin user.");
+  }
 
   const passwordHash = await argon2.hash(password, {
     type: argon2.argon2id,
@@ -84,41 +88,46 @@ async function main() {
   const hostServer = await prisma.server.upsert({
     where: { id: "local-homelab" },
     update: {
-      name: "CachyOS Host",
+      name: "Primary Linux Host",
       hostname: "localhost",
-      environment: "homelab",
+      environment: "self-hosted",
       runtime: ServerRuntime.HOST,
-      description: "CachyOS host running the dashboard and exposing homelab services."
+      description: "Primary Linux host monitored by the dashboard agent."
     },
     create: {
       id: "local-homelab",
-      name: "CachyOS Host",
+      name: "Primary Linux Host",
       hostname: "localhost",
-      description: "CachyOS host running the dashboard and exposing homelab services.",
-      environment: "homelab",
+      description: "Primary Linux host monitored by the dashboard agent.",
+      environment: "self-hosted",
       runtime: ServerRuntime.HOST
     }
   });
 
+  const useHomelabExamples = parseBoolean(process.env.SEED_HOMELAB_EXAMPLES);
   const ubuntuMachine = await prisma.server.upsert({
     where: { id: "ubuntu-nspawn" },
     update: {
-      name: "Ubuntu nspawn",
-      hostname: "ubuntu",
-      description: "Ubuntu 24.04 systemd-nspawn machine stored at /var/lib/machines/ubuntu. Docker Engine runs inside this machine.",
-      environment: "homelab",
-      runtime: ServerRuntime.SYSTEMD_NSPAWN,
-      machinePath: "/var/lib/machines/ubuntu",
+      name: useHomelabExamples ? "Ubuntu nspawn" : "Secondary Linux Host",
+      hostname: useHomelabExamples ? "ubuntu" : "secondary-linux",
+      description: useHomelabExamples
+        ? "Ubuntu systemd-nspawn machine. Docker Engine runs inside this machine."
+        : "Optional secondary Linux host for agent enrollment examples.",
+      environment: useHomelabExamples ? "homelab" : "self-hosted",
+      runtime: useHomelabExamples ? ServerRuntime.SYSTEMD_NSPAWN : ServerRuntime.REMOTE,
+      machinePath: useHomelabExamples ? "/var/lib/machines/ubuntu" : null,
       dockerEndpoint: process.env.UBUNTU_NSPAWN_DOCKER_ENDPOINT || null
     },
     create: {
       id: "ubuntu-nspawn",
-      name: "Ubuntu nspawn",
-      hostname: "ubuntu",
-      description: "Ubuntu 24.04 systemd-nspawn machine stored at /var/lib/machines/ubuntu. Docker Engine runs inside this machine.",
-      environment: "homelab",
-      runtime: ServerRuntime.SYSTEMD_NSPAWN,
-      machinePath: "/var/lib/machines/ubuntu",
+      name: useHomelabExamples ? "Ubuntu nspawn" : "Secondary Linux Host",
+      hostname: useHomelabExamples ? "ubuntu" : "secondary-linux",
+      description: useHomelabExamples
+        ? "Ubuntu systemd-nspawn machine. Docker Engine runs inside this machine."
+        : "Optional secondary Linux host for agent enrollment examples.",
+      environment: useHomelabExamples ? "homelab" : "self-hosted",
+      runtime: useHomelabExamples ? ServerRuntime.SYSTEMD_NSPAWN : ServerRuntime.REMOTE,
+      machinePath: useHomelabExamples ? "/var/lib/machines/ubuntu" : null,
       dockerEndpoint: process.env.UBUNTU_NSPAWN_DOCKER_ENDPOINT || null
     }
   });
@@ -137,21 +146,21 @@ async function main() {
     }
   ];
 
-  if (parseBoolean(process.env.SEED_HOMELAB_EXAMPLES)) {
+  if (useHomelabExamples) {
     endpoints.push(
-    { id: "portfolio-main", serverId: hostServer.id, name: "Portfolio", url: "http://localhost:3000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "portfolio-indevs", serverId: hostServer.id, name: "Portfolio Indevs", url: "http://localhost:3010", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "claritys-hub", serverId: hostServer.id, name: "Claritys Hub", url: "http://localhost:3005", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "automarket-frontend", serverId: ubuntuMachine.id, name: "Automarket Frontend", url: "http://localhost:1003", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "automarket-backend", serverId: ubuntuMachine.id, name: "Automarket Backend", url: "http://localhost:1004", expectedStatus: 404, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "library-frontend", serverId: ubuntuMachine.id, name: "Library Frontend", url: "http://localhost:1001", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "library-backend", serverId: ubuntuMachine.id, name: "Library Backend", url: "http://localhost:1002", expectedStatus: 404, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "portfolio-main", serverId: hostServer.id, name: "Portfolio", url: "http://host.docker.internal:3000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "portfolio-indevs", serverId: hostServer.id, name: "Portfolio Indevs", url: "http://host.docker.internal:3010", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "claritys-hub", serverId: hostServer.id, name: "Claritys Hub", url: "http://host.docker.internal:3005", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "automarket-frontend", serverId: ubuntuMachine.id, name: "Automarket Frontend", url: "http://host.docker.internal:1003", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "automarket-backend", serverId: ubuntuMachine.id, name: "Automarket Backend", url: "http://host.docker.internal:1004", expectedStatus: 404, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "library-frontend", serverId: ubuntuMachine.id, name: "Library Frontend", url: "http://host.docker.internal:1001", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "library-backend", serverId: ubuntuMachine.id, name: "Library Backend", url: "http://host.docker.internal:1002", expectedStatus: 404, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
     { id: "coolify", serverId: ubuntuMachine.id, name: "Coolify", url: process.env.COOLIFY_STATUS_URL ?? "http://localhost:8000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "homelab-monitor", serverId: hostServer.id, name: "Homelab Monitor", url: "http://localhost:3020", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "shopnest", serverId: ubuntuMachine.id, name: "Shopnest", url: "http://localhost:1006", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "ktcg-app", serverId: ubuntuMachine.id, name: "KTCG App", url: "http://localhost:1000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "dist-gateway", serverId: ubuntuMachine.id, name: "Dist Gateway", url: "http://localhost:8443", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
-    { id: "volweb-frontend", serverId: ubuntuMachine.id, name: "VolWeb Frontend", url: "http://localhost:4000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() }
+    { id: "homelab-monitor", serverId: hostServer.id, name: "Homelab Monitor", url: "http://host.docker.internal:3020", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "shopnest", serverId: ubuntuMachine.id, name: "Shopnest", url: "http://host.docker.internal:1006", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "ktcg-app", serverId: ubuntuMachine.id, name: "KTCG App", url: "http://host.docker.internal:1000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "dist-gateway", serverId: ubuntuMachine.id, name: "Dist Gateway", url: "http://host.docker.internal:8443", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() },
+    { id: "volweb-frontend", serverId: ubuntuMachine.id, name: "VolWeb Frontend", url: "http://host.docker.internal:4000", expectedStatus: 200, intervalSeconds: 60, timeoutMs: 5000, enabled: true, nextCheckAt: new Date() }
     );
   }
 
@@ -186,18 +195,24 @@ async function main() {
 
   const agentCredentials = [
     {
-      agentId: process.env.CACHYOS_AGENT_ID ?? "cachyos-host-agent",
-      token: process.env.CACHYOS_AGENT_TOKEN ?? "change-me-cachyos-agent-token",
+      agentId: process.env.PRIMARY_AGENT_ID ?? process.env.CACHYOS_AGENT_ID,
+      token: process.env.PRIMARY_AGENT_TOKEN ?? process.env.CACHYOS_AGENT_TOKEN,
       serverId: hostServer.id,
-      name: "CachyOS host agent"
+      name: "Primary Linux host agent"
     },
     {
-      agentId: process.env.UBUNTU_NSPAWN_AGENT_ID ?? "ubuntu-nspawn-agent",
-      token: process.env.UBUNTU_NSPAWN_AGENT_TOKEN ?? "change-me-ubuntu-nspawn-agent-token",
+      agentId: process.env.SECONDARY_AGENT_ID ?? process.env.UBUNTU_NSPAWN_AGENT_ID,
+      token: process.env.SECONDARY_AGENT_TOKEN ?? process.env.UBUNTU_NSPAWN_AGENT_TOKEN,
       serverId: ubuntuMachine.id,
-      name: "Ubuntu nspawn agent"
+      name: "Secondary Linux host agent"
     }
-  ];
+  ].filter((credential): credential is { agentId: string; token: string; serverId: string; name: string } =>
+    Boolean(credential.agentId && credential.token)
+  );
+
+  if (agentCredentials.length === 0) {
+    throw new Error("Set PRIMARY_AGENT_ID and PRIMARY_AGENT_TOKEN before running the seed.");
+  }
 
   for (const credential of agentCredentials) {
     await prisma.agentCredential.upsert({

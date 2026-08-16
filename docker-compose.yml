@@ -5,45 +5,81 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-devsecops_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-devsecops}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devsecops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-devsecops} -d $${POSTGRES_DB:-devsecops_dashboard}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   app:
-    build: .
+    build:
+      context: .
+      target: runner
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:-devsecops}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
-      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
-      AUTH_SECRET: ${AUTH_SECRET:-replace-with-openssl-rand-base64-32}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-now}
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
+      AUTH_URL: ${AUTH_URL:?AUTH_URL is required}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      APP_PORT: ${APP_PORT:-3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      RUN_DATABASE_MIGRATIONS: ${RUN_DATABASE_MIGRATIONS:-true}
+      RUN_DATABASE_SEED: ${RUN_DATABASE_SEED:-false}
       SEED_HOMELAB_EXAMPLES: ${SEED_HOMELAB_EXAMPLES:-false}
       SEED_ENDPOINTS_JSON: ${SEED_ENDPOINTS_JSON:-}
-      DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+      ENABLE_DOCKER_SOCKET: ${ENABLE_DOCKER_SOCKET:-false}
       UBUNTU_NSPAWN_DOCKER_ENDPOINT: ${UBUNTU_NSPAWN_DOCKER_ENDPOINT:-}
-      DASHBOARD_HEALTH_URL: ${DASHBOARD_HEALTH_URL:-http://localhost:3000/api/health}
-      COOLIFY_STATUS_URL: ${COOLIFY_STATUS_URL:-http://localhost:8000}
+      DASHBOARD_HEALTH_URL: ${DASHBOARD_HEALTH_URL:-}
+      COOLIFY_STATUS_URL: ${COOLIFY_STATUS_URL:-}
       MONITORING_DEFAULT_TIMEOUT_MS: ${MONITORING_DEFAULT_TIMEOUT_MS:-5000}
-      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-true}
-      CACHYOS_AGENT_ID: ${CACHYOS_AGENT_ID:-cachyos-host-agent}
-      CACHYOS_AGENT_TOKEN: ${CACHYOS_AGENT_TOKEN:-change-me-cachyos-agent-token}
-      UBUNTU_NSPAWN_AGENT_ID: ${UBUNTU_NSPAWN_AGENT_ID:-ubuntu-nspawn-agent}
-      UBUNTU_NSPAWN_AGENT_TOKEN: ${UBUNTU_NSPAWN_AGENT_TOKEN:-change-me-ubuntu-nspawn-agent-token}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-false}
+      MONITOR_REDIRECT_LIMIT: ${MONITOR_REDIRECT_LIMIT:-3}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-30}
+      ALERT_CPU_CRITICAL_PERCENT: ${ALERT_CPU_CRITICAL_PERCENT:-90}
+      ALERT_MEMORY_CRITICAL_PERCENT: ${ALERT_MEMORY_CRITICAL_PERCENT:-90}
+      ALERT_DISK_CRITICAL_PERCENT: ${ALERT_DISK_CRITICAL_PERCENT:-85}
+      ALERT_SSL_EXPIRING_DAYS: ${ALERT_SSL_EXPIRING_DAYS:-14}
+      ALERT_ENDPOINT_FAILURE_THRESHOLD: ${ALERT_ENDPOINT_FAILURE_THRESHOLD:-3}
+      AGENT_STALE_AFTER_MINUTES: ${AGENT_STALE_AFTER_MINUTES:-2}
+      SERVER_OFFLINE_AFTER_MINUTES: ${SERVER_OFFLINE_AFTER_MINUTES:-10}
+      AGENT_MAX_CLOCK_SKEW_SECONDS: ${AGENT_MAX_CLOCK_SKEW_SECONDS:-300}
+      AGENT_NONCE_RETENTION_MINUTES: ${AGENT_NONCE_RETENTION_MINUTES:-30}
+      AGENT_MAX_BODY_BYTES: ${AGENT_MAX_BODY_BYTES:-16384}
+      PRIMARY_AGENT_ID: ${PRIMARY_AGENT_ID:-}
+      PRIMARY_AGENT_TOKEN: ${PRIMARY_AGENT_TOKEN:-}
+      SECONDARY_AGENT_ID: ${SECONDARY_AGENT_ID:-}
+      SECONDARY_AGENT_TOKEN: ${SECONDARY_AGENT_TOKEN:-}
+      CACHYOS_AGENT_ID: ${CACHYOS_AGENT_ID:-}
+      CACHYOS_AGENT_TOKEN: ${CACHYOS_AGENT_TOKEN:-}
+      UBUNTU_NSPAWN_AGENT_ID: ${UBUNTU_NSPAWN_AGENT_ID:-}
+      UBUNTU_NSPAWN_AGENT_TOKEN: ${UBUNTU_NSPAWN_AGENT_TOKEN:-}
     ports:
       - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
 
   monitor-worker:
     build:
@@ -55,12 +91,27 @@ services:
         condition: service_healthy
     command: ["npm", "run", "worker:monitor"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:-devsecops}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
       MONITORING_DEFAULT_TIMEOUT_MS: ${MONITORING_DEFAULT_TIMEOUT_MS:-5000}
       MONITOR_WORKER_POLL_SECONDS: ${MONITOR_WORKER_POLL_SECONDS:-15}
       MONITOR_WORKER_LOCK_SECONDS: ${MONITOR_WORKER_LOCK_SECONDS:-45}
       MONITOR_WORKER_BATCH_SIZE: ${MONITOR_WORKER_BATCH_SIZE:-10}
-      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-true}
+      MONITOR_ALLOW_PRIVATE_NETWORKS: ${MONITOR_ALLOW_PRIVATE_NETWORKS:-false}
+      MONITOR_REDIRECT_LIMIT: ${MONITOR_REDIRECT_LIMIT:-3}
+      ALERT_SSL_EXPIRING_DAYS: ${ALERT_SSL_EXPIRING_DAYS:-14}
+      ALERT_ENDPOINT_FAILURE_THRESHOLD: ${ALERT_ENDPOINT_FAILURE_THRESHOLD:-3}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'monitor-scheduler' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
 
 volumes:
   postgres-data:
