@@ -10,6 +10,29 @@ npm run preflight -- --production
 
 Replace placeholder values, fix malformed URLs, align `APP_PORT` and localhost `AUTH_URL`, and avoid `DOCKER_SOCKET_PATH` unless `ENABLE_DOCKER_SOCKET=true` is intentional.
 
+If your `.env` was created before the generic agent names were introduced, remove old placeholder lines such as:
+
+```text
+CACHYOS_AGENT_TOKEN="change-me-cachyos-agent-token"
+UBUNTU_NSPAWN_AGENT_TOKEN="change-me-ubuntu-nspawn-agent-token"
+```
+
+Then use `PRIMARY_AGENT_ID` and `PRIMARY_AGENT_TOKEN`, or regenerate the file:
+
+```bash
+npm run setup -- --force
+```
+
+## Docker Build Fails During npm ci
+
+Prisma downloads engine packages during `npm ci`. If Docker logs show `ECONNRESET` from `@prisma/engines`, retry the build after checking network/DNS access from Docker:
+
+```bash
+docker compose build --no-cache app
+```
+
+The Dockerfile configures npm fetch retries, but a hard network reset can still fail a single build attempt.
+
 ## App Does Not Start
 
 Check:

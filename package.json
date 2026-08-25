@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "setup": "node scripts/bootstrap.mjs",
+    "setup:install": "node scripts/install.mjs",
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "prisma generate && tsx --test \"src/**/*.test.ts\"",
     "preflight": "tsx src/server/config/preflight.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -51,6 +52,7 @@
     "typescript": "^5.7.2"
   },
   "overrides": {
+    "deepmerge-ts": "^8.0.2",
     "postcss": "^8.5.25",
     "sharp": "^0.35.3"
   }

@@ -132,8 +132,10 @@ async function main() {
     }
   });
 
-  const endpoints: SeedEndpoint[] = [
-    {
+  const endpoints: SeedEndpoint[] = [];
+
+  if (parseBoolean(process.env.SEED_DASHBOARD_ENDPOINT ?? "true")) {
+    endpoints.push({
       id: "dashboard-local",
       serverId: hostServer.id,
       name: "DevSecOps Dashboard",
@@ -143,8 +145,8 @@ async function main() {
       timeoutMs: 5000,
       enabled: true,
       nextCheckAt: new Date()
-    }
-  ];
+    });
+  }
 
   if (useHomelabExamples) {
     endpoints.push(

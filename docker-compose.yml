@@ -29,6 +29,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
       AUTH_URL: ${AUTH_URL:?AUTH_URL is required}
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
@@ -39,6 +40,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
       RUN_DATABASE_MIGRATIONS: ${RUN_DATABASE_MIGRATIONS:-true}
       RUN_DATABASE_SEED: ${RUN_DATABASE_SEED:-false}
+      SEED_DASHBOARD_ENDPOINT: ${SEED_DASHBOARD_ENDPOINT:-true}
       SEED_HOMELAB_EXAMPLES: ${SEED_HOMELAB_EXAMPLES:-false}
       SEED_ENDPOINTS_JSON: ${SEED_ENDPOINTS_JSON:-}
       ENABLE_DOCKER_SOCKET: ${ENABLE_DOCKER_SOCKET:-false}
@@ -92,6 +94,7 @@ services:
     command: ["npm", "run", "worker:monitor"]
     environment:
       NODE_ENV: production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DATABASE_URL: postgresql://${POSTGRES_USER:-devsecops}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-devsecops_dashboard}?schema=public
       MONITORING_DEFAULT_TIMEOUT_MS: ${MONITORING_DEFAULT_TIMEOUT_MS:-5000}
       MONITOR_WORKER_POLL_SECONDS: ${MONITOR_WORKER_POLL_SECONDS:-15}
