@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "setup": "node scripts/bootstrap.mjs",
+    "setup:install": "node scripts/install.mjs",
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",

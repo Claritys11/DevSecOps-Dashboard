@@ -54,6 +54,7 @@ export const appEnvSchema = z.object({
   HOSTNAME: z.string().default("0.0.0.0"),
   RUN_DATABASE_MIGRATIONS: booleanSchema,
   RUN_DATABASE_SEED: booleanSchema,
+  SEED_DASHBOARD_ENDPOINT: booleanSchema,
   SEED_HOMELAB_EXAMPLES: booleanSchema,
   SEED_ENDPOINTS_JSON: z.string().optional(),
   DOCKER_SOCKET_PATH: z.string().optional(),

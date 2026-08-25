@@ -7,15 +7,27 @@ The supported deployment model is Docker Compose on a Linux host.
 1. Create a `.env` file.
 
 ```bash
-npm run setup
+./install.sh
 ```
 
-2. Review generated secrets and set a production `AUTH_URL`.
+The installer checks dependencies, installs npm packages, asks for the app port
+and other required values, auto-selects the next free port when the requested
+one is busy, generates secrets, writes `.env`, validates the Compose
+configuration, and guides the deploy choices.
+
+2. Review the generated output and keep the admin password and agent token
+private.
 
 3. Start the stack.
 
 ```bash
-docker compose up -d --build
+docker compose -p devsecopsdash up -d --build
+```
+
+To generate configuration and deploy in one step:
+
+```bash
+./install.sh --deploy
 ```
 
 Production defaults:
@@ -25,6 +37,79 @@ Production defaults:
 - Docker socket access is disabled;
 - database migrations run on startup by default;
 - database seeding does not run unless `RUN_DATABASE_SEED=true`.
+
+## Coexisting With Other Docker Stacks
+
+If the host already runs Docker workloads, Coolify, systemd-nspawn machines, or
+other Compose projects, treat this dashboard as a separate deployment. Check
+published ports before starting:
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Ports}}'
+ss -ltnp
+```
+
+Set a free `APP_PORT` in `.env` and make `AUTH_URL` match it. For example:
+
+```text
+APP_PORT="3003"
+AUTH_URL="http://localhost:3003"
+```
+
+Use a unique Compose project name when installing next to other stacks:
+
+```bash
+./install.sh --deploy --project devsecopsdash
+```
+
+Avoid the development override on shared hosts unless you intentionally need a
+published PostgreSQL port. `docker-compose.dev.yml` exposes Postgres through
+`POSTGRES_HOST_PORT`, which can conflict with existing databases. If you do need
+the development override, let the installer pick free ports:
+
+```bash
+./install.sh --dev --deploy
+```
+
+Keep these values disabled for a first install on a busy host:
+
+```text
+RUN_DATABASE_SEED="false"
+SEED_DASHBOARD_ENDPOINT="false"
+SEED_HOMELAB_EXAMPLES="false"
+MONITOR_ALLOW_PRIVATE_NETWORKS="false"
+ENABLE_DOCKER_SOCKET="false"
+```
+
+Alternatives for multi-environment setups:
+
+- Use the Go agent on each host or systemd-nspawn machine for host metrics.
+- Put the dashboard behind an existing reverse proxy such as Coolify or Traefik
+  instead of binding ports 80 or 443 directly.
+- If container inventory is needed, prefer a dedicated Docker endpoint for the
+  target environment. Mount `/var/run/docker.sock` only for a trusted host where
+  dashboard admins are allowed Docker-equivalent access.
+
+Useful installer flags:
+
+```text
+--port 3018              start app port detection from 3018
+--url https://dash.example.com
+--project devsecopsdash  set the Compose project name
+--dev                    include docker-compose.dev.yml and detect POSTGRES_HOST_PORT
+--seed                   create the initial admin and agent credential
+--deploy                 build, start, and seed in one run
+--self-monitor           seed an internal dashboard health endpoint
+--with-docker-socket     opt in to Docker socket access
+--force                  replace an existing .env
+--yes                    accept defaults for non-interactive installs
+```
+
+The same automation is available through npm:
+
+```bash
+npm run setup:install -- --deploy
+```
 
 ## Development
 

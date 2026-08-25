@@ -4,6 +4,9 @@ services:
     environment:
       ENABLE_DOCKER_SOCKET: "true"
       DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+      DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-}
+    group_add:
+      - "${DOCKER_SOCKET_GID:-0}"
     volumes:
       - type: bind
         source: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}

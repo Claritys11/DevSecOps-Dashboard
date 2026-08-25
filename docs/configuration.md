@@ -58,11 +58,13 @@ postgresql://devsecops:<POSTGRES_PASSWORD>@postgres:5432/devsecops_dashboard?sch
 | `APP_PORT` | `3000` | Host port published by Compose. |
 | `RUN_DATABASE_MIGRATIONS` | `true` | Runs Prisma deploy on container start. |
 | `RUN_DATABASE_SEED` | `false` | Production seed opt-in. |
+| `SEED_DASHBOARD_ENDPOINT` | `true` | Adds the dashboard health endpoint during seed. Installers for shared hosts may set this to `false`. |
 | `MONITOR_ALLOW_PRIVATE_NETWORKS` | `false` | Set `true` only for trusted homelab/internal monitoring. |
 | `MONITOR_REDIRECT_LIMIT` | `3` | Redirects are manually followed and each target is validated. |
 | `MONITORING_DEFAULT_TIMEOUT_MS` | `5000` | Default HTTP/TLS monitor timeout. |
 | `ENABLE_DOCKER_SOCKET` | `false` | Required acknowledgement for Docker socket use. |
 | `DOCKER_SOCKET_PATH` | empty | Used only with the Docker socket override. |
+| `DOCKER_SOCKET_GID` | empty | Host Docker socket group id. The installer detects it for non-root app containers. |
 | `UBUNTU_NSPAWN_DOCKER_ENDPOINT` | empty | Optional Docker endpoint for homelab nspawn setups. |
 
 ## Agent Seed Variables
@@ -76,6 +78,7 @@ postgresql://devsecops:<POSTGRES_PASSWORD>@postgres:5432/devsecops_dashboard?sch
 ## Development-Only Or Optional
 
 - `POSTGRES_HOST_PORT` is used by `docker-compose.dev.yml` to publish PostgreSQL locally.
+- `SEED_DASHBOARD_ENDPOINT=false` skips the default self-monitor endpoint.
 - `SEED_HOMELAB_EXAMPLES=true` adds example private-network endpoints and requires `MONITOR_ALLOW_PRIVATE_NETWORKS=true`.
 - `DASHBOARD_HEALTH_URL` and `COOLIFY_STATUS_URL` are used by seed data only.
 

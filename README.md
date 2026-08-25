@@ -44,15 +44,18 @@ Requirements:
 - Docker and Docker Compose
 - Go 1.22 or newer only for agent development
 
-Generate local configuration:
+Run the guided installer:
 
 ```bash
-npm ci
-npm run setup
-npm run preflight
+./install.sh
 ```
 
-Start a development stack:
+The installer checks dependencies, installs npm packages, asks for the required
+values, auto-selects the next free port when your requested port is busy,
+generates `.env`, validates the config, and can build/start the Compose stack in
+the same run.
+
+Start a development stack manually:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
@@ -67,10 +70,20 @@ http://localhost:3003
 Production uses the base Compose file:
 
 ```bash
-docker compose up -d --build
+./install.sh --deploy
 ```
 
 Production defaults fail closed for required secrets, keep PostgreSQL private to the Compose network, disable private-network endpoint monitoring, disable Docker socket access, run migrations before startup, and skip seed data unless `RUN_DATABASE_SEED=true`.
+
+If the host already runs other Docker stacks, Coolify, or systemd-nspawn
+machines, review the coexistence notes before deploying. Use a free `APP_PORT`,
+match `AUTH_URL`, and prefer a unique Compose project name:
+
+```bash
+./install.sh --deploy --project devsecopsdash
+```
+
+See [Deployment](docs/deployment.md#coexisting-with-other-docker-stacks).
 
 ## Screenshots
 
