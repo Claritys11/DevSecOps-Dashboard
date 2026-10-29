@@ -299,9 +299,11 @@ fi
 ok "Dashboard is up"
 
 # ---------------------------------------------------------------- local agent
+# Only on fresh installs: on upgrades the host agent may use credentials issued from the UI,
+# and reinstalling it with the .env ones would disconnect it.
 AGENT_ID="$(env_get PRIMARY_AGENT_ID)"
 AGENT_TOKEN="$(env_get PRIMARY_AGENT_TOKEN)"
-if [ -n "$AGENT_ID" ] && [ -n "$AGENT_TOKEN" ] && [ -d /run/systemd/system ] && need curl; then
+if [ "$FRESH" = "true" ] && [ "$MONITOR_HOST" = "true" ] && [ -n "$AGENT_ID" ] && [ -n "$AGENT_TOKEN" ] && need curl; then
   SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
   step "Installing the monitoring agent on this machine"
   if curl -fsSL "http://127.0.0.1:$PORT/api/agents/install" \
