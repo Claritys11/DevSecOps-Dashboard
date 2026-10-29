@@ -25,7 +25,7 @@ export function CopyBlock({ value, className, secret = false }: { value: string;
 
   return (
     <div className={cn("group relative rounded border bg-bg", className)}>
-      <pre className={cn("overflow-x-auto whitespace-pre-wrap break-all p-3 pr-24 font-mono text-xs leading-5", secret && "select-all")}>{value}</pre>
+      <pre className={cn("overflow-x-auto whitespace-pre-wrap [overflow-wrap:anywhere] p-3 pr-24 font-mono text-xs leading-5", secret && "select-all")}>{value}</pre>
       <button
         type="button"
         onClick={copy}

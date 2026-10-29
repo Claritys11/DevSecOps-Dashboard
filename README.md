@@ -2,11 +2,34 @@
 
 Self-hosted monitoring for the machines and services you run yourself. It shows whether everything is OK at a glance, and what is wrong when something is not.
 
+![Overview: one health sentence, a status strip of every server and endpoint, then the alerts that need attention](docs/screenshots/overview.png)
+
 - **Servers**: CPU, memory, disk, load and network from a tiny Go agent (no dependencies, ~6 MB).
 - **Endpoints**: HTTP(S) uptime, response time, status code and TLS certificate expiry.
 - **Containers**: Docker state and logs, plus restart, stop and delete with a required reason and an audit trail.
 - **Alerts**: open and close on their own based on thresholds, with acknowledgement.
 - **Users and roles**: viewer, maintainer and admin.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/server-dark.png" alt="Server page in dark mode with CPU, memory, disk and load charts and alert thresholds"></td>
+    <td width="50%"><img src="docs/screenshots/endpoints.png" alt="Endpoints page with the last 30 checks, 24-hour uptime, response time and certificate expiry"></td>
+  </tr>
+  <tr>
+    <td align="center">Server history, dark mode</td>
+    <td align="center">Endpoints with check history and certificate expiry</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/add-server.png" alt="Add server dialog showing the one-line agent install command"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/mobile-dark.png" alt="Overview on a phone" width="45%"></td>
+  </tr>
+  <tr>
+    <td align="center">Adding a server gives you one command to run</td>
+    <td align="center">Works on a phone</td>
+  </tr>
+</table>
+
+Screenshots come from a demo install with two agents reporting live, five endpoints, and one endpoint that is deliberately unreachable.
 
 ## Install
 

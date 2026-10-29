@@ -125,7 +125,7 @@ function Metric({ label, value, tone, icon = false }: { label: string; value: st
   return (
     <div>
       <dt className="text-2xs text-muted">{label}</dt>
-      <dd className={cn("tabular flex items-center gap-1 font-mono", tone && toneText[tone])}>
+      <dd className={cn("tabular flex items-center gap-1 whitespace-nowrap font-mono", tone && toneText[tone])}>
         {icon && <LockKeyhole className="size-3" />}
         {value}
       </dd>
