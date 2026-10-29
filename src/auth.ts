@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import argon2 from "argon2";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/server/services/rate-limit-service";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -14,6 +15,7 @@ export const authConfig = {
     strategy: "jwt",
     maxAge: 60 * 60 * 8
   },
+  trustHost: true,
   pages: {
     signIn: "/login"
   },
@@ -26,9 +28,10 @@ export const authConfig = {
       async authorize(rawCredentials) {
         const parsed = credentialsSchema.safeParse(rawCredentials);
         if (!parsed.success) return null;
+        if (!checkRateLimit(`login:${parsed.data.email.toLowerCase()}`, 10, 15 * 60_000)) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email }
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: parsed.data.email, mode: "insensitive" } }
         });
 
         if (!user) return null;

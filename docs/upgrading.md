@@ -1,39 +1,30 @@
 # Upgrading
 
-This project is pre-1.0, so configuration defaults may change while the repository matures.
-
-## Before Upgrading
-
-1. Back up PostgreSQL.
-2. Save your `.env` securely.
-3. Read `CHANGELOG.md`.
-4. Run `docker compose config` with your intended Compose files.
-
-## Apply Migrations
-
-Production startup runs migrations by default:
+Re-run the installer from the same machine:
 
 ```bash
-docker compose up -d --build
+curl -fsSL https://raw.githubusercontent.com/Claritys11/DevSecOps-Dashboard/main/install.sh | bash
 ```
 
-For manual control:
+Or, from an existing checkout:
 
 ```bash
-RUN_DATABASE_MIGRATIONS=false docker compose up -d --build app
-docker compose run --rm app npx prisma migrate deploy
-docker compose up -d app monitor-worker
+cd ~/devsecops-dashboard
+git pull
+./install.sh
 ```
 
-If migration fails, stop and inspect the error before retrying.
+Your `.env` and database are kept. Migrations run automatically when the `app` container starts.
 
-## Breaking Configuration Changes In This Hardening Pass
+## From 0.x to 1.0
 
-- Production no longer accepts placeholder secrets.
-- Production no longer publishes PostgreSQL by default.
-- Production no longer allows private-network monitors by default.
-- Production no longer seeds automatically.
-- Docker socket access moved to `docker-compose.docker-socket.yml`.
-- New installs should use `PRIMARY_AGENT_ID` and `PRIMARY_AGENT_TOKEN`.
+- **Servers, agents, endpoints and users are now managed in the UI.** Existing `PRIMARY_AGENT_*` / `SECONDARY_AGENT_*` (and the older `CACHYOS_*` / `UBUNTU_NSPAWN_*`) variables keep working. Their servers keep their ids and history.
+- **The bootstrap runs on every start** (`RUN_DATABASE_SEED` now defaults to `true`). It only creates what is missing. It no longer resets the admin password. Use `ADMIN_RESET_PASSWORD=true` for that.
+- **`SEED_HOMELAB_EXAMPLES`, `SEED_DASHBOARD_ENDPOINT`, `DASHBOARD_HEALTH_URL` and `COOLIFY_STATUS_URL` were removed.** Endpoints created earlier stay. Manage them from the Endpoints page.
+- **`AUTH_URL` is optional.** Leave it empty to open the dashboard by any hostname.
+- **One image** now runs both the app and the worker, and bundles the agent binaries.
+- Container management is enabled with `COMPOSE_FILE=docker-compose.yml:docker-compose.docker-socket.yml` instead of a Compose profile.
 
-Existing legacy agent env names remain recognized for seed compatibility.
+## Rolling back
+
+Check out the previous tag and re-run the installer with `--build`. Database migrations only add columns and enum values, so older versions keep working on an upgraded database.

@@ -1,57 +1,55 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Container, Gauge, GlobeLock, LogOut, Server, ShieldCheck } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { auth, signOut } from "@/auth";
-import { FormSubmitButton } from "@/components/form-submit-button";
-
-const nav = [
-  { href: "/", label: "Overview", icon: Gauge },
-  { href: "/servers", label: "Servers", icon: Server },
-  { href: "/containers", label: "Containers", icon: Container },
-  { href: "/endpoints", label: "Endpoints", icon: GlobeLock }
-];
+import { prisma } from "@/lib/prisma";
+import { AutoRefresh } from "@/components/shell/auto-refresh";
+import { MobileNav, Sidebar, type NavCounts } from "@/components/shell/nav";
+import { ThemeToggle } from "@/components/shell/theme-toggle";
 
 async function logoutAction() {
   "use server";
   await signOut({ redirectTo: "/login" });
 }
 
+const roleLabel = { ADMIN: "Admin", MAINTAINER: "Maintainer", VIEWER: "Viewer" } as const;
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const [alerts, criticalAlerts] = await Promise.all([
+    prisma.alert.count({ where: { resolvedAt: null, acknowledgedAt: null } }),
+    prisma.alert.count({ where: { resolvedAt: null, acknowledgedAt: null, severity: "CRITICAL" } })
+  ]);
+  const counts: NavCounts = { alerts, criticalAlerts };
+
+  const account = (
+    <div className="flex items-center gap-2 border-t px-1 pt-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium">{session.user.email}</p>
+        <p className="text-2xs text-muted">{roleLabel[session.user.role] ?? session.user.role}</p>
+      </div>
+      <ThemeToggle />
+      <form action={logoutAction}>
+        <button type="submit" className="rounded p-1.5 text-muted hover:bg-raised hover:text-fg" aria-label="Sign out" title="Sign out">
+          <LogOut className="size-4" />
+        </button>
+      </form>
+    </div>
+  );
+
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r bg-card p-4 lg:block">
-        <Link href="/" className="mb-8 flex items-center gap-3">
-          <div className="grid size-9 place-items-center rounded bg-primary text-primary-foreground">
-            <ShieldCheck className="size-5" />
+      <Sidebar counts={counts} footer={account} />
+      <div className="lg:pl-60">
+        <header className="sticky top-0 z-30 flex h-12 items-center justify-between gap-3 border-b bg-bg/90 px-4 backdrop-blur lg:px-8">
+          <div className="flex items-center gap-2">
+            <MobileNav counts={counts} footer={account} />
+            <span className="text-sm font-semibold lg:hidden">DevSecOps</span>
           </div>
-          <div>
-            <p className="font-semibold">DevSecOps</p>
-            <p className="text-xs text-muted-foreground">Homelab dashboard</p>
-          </div>
-        </Link>
-        <nav className="space-y-1">
-          {nav.map((item) => (
-            <Link key={item.href} href={item.href} className="flex h-10 items-center gap-3 rounded px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-              <item.icon className="size-4" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-      </aside>
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur lg:px-8">
-          <div>
-            <p className="text-sm font-medium">{session.user.email}</p>
-            <p className="text-xs text-muted-foreground">{session.user.role}</p>
-          </div>
-          <form action={logoutAction}>
-            <FormSubmitButton variant="secondary" pendingLabel="Logging out..."><LogOut className="size-4" /> Logout</FormSubmitButton>
-          </form>
+          <AutoRefresh />
         </header>
-        <main className="p-4 lg:p-8">{children}</main>
+        <main className="mx-auto max-w-7xl px-4 py-6 lg:px-8 lg:py-8">{children}</main>
       </div>
     </div>
   );

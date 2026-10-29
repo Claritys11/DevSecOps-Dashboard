@@ -1,10 +1,9 @@
 {
   "name": "devsecops-dashboard",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "setup": "node scripts/bootstrap.mjs",
-    "setup:install": "node scripts/install.mjs",
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
@@ -17,7 +16,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "validate": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "worker:monitor": "tsx src/worker/monitor-scheduler.ts"
+    "worker:monitor": "tsx src/worker/monitor-scheduler.ts",
+    "agent:build": "cd agent && for arch in amd64 arm64; do CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags='-s -w' -o dist/devsecops-agent-linux-$arch ./cmd/agent; done"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",

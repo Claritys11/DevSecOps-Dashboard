@@ -1,16 +1,19 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { prisma } from "@/lib/prisma";
 import { getContainerLogs } from "@/server/services/docker-service";
+import { PageHeader } from "@/components/ui/page-header";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Container logs" };
 
 export default async function ContainerLogsPage({ params }: { params: Promise<{ serverId: string; containerId: string }> }) {
-  const { serverId, containerId } = await params;
+  const { serverId, containerId: rawId } = await params;
+  const containerId = decodeURIComponent(rawId);
+  const record = await prisma.containerRecord.findUnique({ where: { serverId_dockerId: { serverId, dockerId: containerId } }, include: { server: { select: { name: true } } } });
+
   let logs = "";
   let error: string | null = null;
-
   try {
     logs = await getContainerLogs(serverId, containerId);
   } catch (caught) {
@@ -18,21 +21,21 @@ export default async function ContainerLogsPage({ params }: { params: Promise<{ 
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/containers"><Button variant="secondary"><ArrowLeft className="size-4" /> Back</Button></Link>
-        <div>
-          <h1 className="text-2xl font-semibold">Container Logs</h1>
-          <p className="break-all text-sm text-muted-foreground">{containerId}</p>
-        </div>
-      </div>
-      <Card>
-        {error ? (
-          <p className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>
-        ) : (
-          <pre className="max-h-[70vh] overflow-auto rounded bg-zinc-950 p-4 text-xs leading-6 text-zinc-100">{logs || "No logs returned."}</pre>
-        )}
-      </Card>
+    <div>
+      <PageHeader
+        back={
+          <Link href="/containers" className="inline-flex items-center gap-1 text-xs text-muted hover:text-fg">
+            <ArrowLeft className="size-3.5" /> Containers
+          </Link>
+        }
+        title={record?.name ?? "Container logs"}
+        description={<>Last 200 lines{record?.server ? <> from {record.server.name}</> : null}. Newest at the bottom.</>}
+      />
+      {error ? (
+        <p className="rounded border border-crit/40 bg-crit/10 px-3 py-2 text-sm text-crit">{error}</p>
+      ) : (
+        <pre className="max-h-[75vh] overflow-auto rounded-md border bg-[#0b0f14] p-4 font-mono text-xs leading-5 text-[#d6dde8]">{logs || "No log output."}</pre>
+      )}
     </div>
   );
 }

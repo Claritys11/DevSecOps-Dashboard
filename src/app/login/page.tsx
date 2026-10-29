@@ -2,7 +2,10 @@ import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { signIn } from "@/auth";
-import { FormSubmitButton } from "@/components/form-submit-button";
+import { Field, FormError, Input } from "@/components/ui/field";
+import { SubmitButton } from "@/components/submit-button";
+
+export const metadata = { title: "Sign in" };
 
 async function loginAction(formData: FormData) {
   "use server";
@@ -13,45 +16,40 @@ async function loginAction(formData: FormData) {
       redirectTo: "/"
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      redirect("/login?error=CredentialsSignin");
-    }
+    if (error instanceof AuthError) redirect("/login?error=CredentialsSignin");
     throw error;
   }
 }
 
-export default function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
+
   return (
-    <main className="grid min-h-screen place-items-center px-4">
-      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-sm">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded bg-primary text-primary-foreground">
+    <main className="grid min-h-screen place-items-center px-4 py-12">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded bg-fg text-bg">
             <ShieldCheck className="size-5" />
-          </div>
+          </span>
           <div>
-            <h1 className="text-xl font-semibold">DevSecOps Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Sign in to your homelab console.</p>
+            <h1 className="text-lg font-semibold">DevSecOps Dashboard</h1>
+            <p className="text-xs text-muted">Sign in to see your servers and services.</p>
           </div>
         </div>
-        <form action={loginAction} className="space-y-4">
-          <label className="block text-sm font-medium">
-            Email
-            <input className="mt-1 h-10 w-full rounded border bg-background px-3" type="email" name="email" required />
-          </label>
-          <label className="block text-sm font-medium">
-            Password
-            <input className="mt-1 h-10 w-full rounded border bg-background px-3" type="password" name="password" required />
-          </label>
-          <LoginError searchParams={searchParams} />
-          <FormSubmitButton className="w-full" pendingLabel="Signing in...">Sign in</FormSubmitButton>
+        <form action={loginAction} className="space-y-4 rounded-md border bg-surface p-5">
+          <Field label="Email">
+            <Input type="email" name="email" autoComplete="username" required autoFocus />
+          </Field>
+          <Field label="Password">
+            <Input type="password" name="password" autoComplete="current-password" required />
+          </Field>
+          {error && <FormError>That email and password do not match. After 10 attempts, sign-in pauses for 15 minutes.</FormError>}
+          <SubmitButton className="w-full" pendingLabel="Signing in">Sign in</SubmitButton>
         </form>
+        <p className="mt-4 text-xs text-muted">
+          First time? The admin email and password were printed by the installer and saved in <span className="font-mono">.env</span>.
+        </p>
       </div>
     </main>
   );
-}
-
-async function LoginError({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const params = await searchParams;
-  if (!params.error) return null;
-  return <p className="rounded border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">Invalid email or password.</p>;
 }

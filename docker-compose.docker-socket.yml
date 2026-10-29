@@ -1,10 +1,11 @@
+# Opt-in: lets the dashboard list and manage containers on this host.
+# Docker socket access is root-equivalent. Enable with COMPOSE_FILE in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.docker-socket.yml
 services:
   app:
-    profiles: ["docker-socket"]
     environment:
       ENABLE_DOCKER_SOCKET: "true"
-      DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
-      DOCKER_SOCKET_GID: ${DOCKER_SOCKET_GID:-}
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
     group_add:
       - "${DOCKER_SOCKET_GID:-0}"
     volumes:

@@ -1,100 +1,119 @@
+import Link from "next/link";
+import { Boxes, Lock } from "lucide-react";
+import { ServerRuntime } from "@prisma/client";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { StatusBadge } from "@/components/status-badge";
-import { ContainerActions } from "@/components/container-actions";
-import { ContainerProtectionControl } from "@/components/container-protection-control";
+import { hasRole } from "@/server/auth/guards";
+import { containerTone } from "@/lib/health";
 import { listContainers } from "@/server/services/docker-service";
+import { PageHeader } from "@/components/ui/page-header";
+import { Card, Section } from "@/components/ui/card";
+import { Status, Tag } from "@/components/ui/status";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ContainerActions } from "@/components/containers/container-actions";
+import { protectionLabel } from "@/components/containers/protection";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Containers" };
+
+type Row = { id: string; name: string; image: string; state: string; status: string; protectionLevel: string; protectionOverride: boolean };
+
+function explainDockerError(message: string) {
+  if (/ENOENT|EACCES|docker\.sock/.test(message)) {
+    return "The dashboard cannot reach the Docker socket. Re-run the installer with --with-docker, or add docker-compose.docker-socket.yml to COMPOSE_FILE in .env.";
+  }
+  if (/ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH/.test(message)) return "The Docker API did not answer. Check the address in this server's settings and that the port is reachable.";
+  return message;
+}
 
 export default async function ContainersPage() {
+  const session = await auth();
+  const role = session?.user.role;
   const servers = await prisma.server.findMany({ orderBy: { name: "asc" } });
+  const connected = servers.filter((server) => server.dockerEndpoint || server.runtime === ServerRuntime.HOST || server.runtime === ServerRuntime.SYSTEMD_NSPAWN);
+  const withoutDocker = servers.length - connected.length;
+
   const results = await Promise.all(
-    servers.map(async (server) => {
+    connected.map(async (server) => {
       try {
-        return { server, source: "docker", containers: await listContainers(server.id), warning: null };
+        const containers = (await listContainers(server.id)).map((container) => ({ ...container, protectionOverride: container.protectionOverride ?? false })) as Row[];
+        return { server, containers, live: true, warning: null as string | null };
       } catch (error) {
-        const cachedContainers = await prisma.containerRecord.findMany({ where: { serverId: server.id }, orderBy: { name: "asc" } });
-        const containers = cachedContainers.map((container) => ({
-          id: container.dockerId,
-          name: container.name,
-          image: container.image,
-          state: container.state,
-          status: container.status,
-          protectionLevel: container.protectionLevel,
-          protectionOverride: container.protectionOverride
-        }));
-        return { server, source: "cache", containers, warning: error instanceof Error ? error.message : "Docker unavailable" };
+        const cached = await prisma.containerRecord.findMany({ where: { serverId: server.id }, orderBy: { name: "asc" } });
+        return {
+          server,
+          containers: cached.map((record) => ({ id: record.dockerId, name: record.name, image: record.image, state: record.state, status: record.status, protectionLevel: record.protectionLevel, protectionOverride: record.protectionOverride })),
+          live: false,
+          warning: explainDockerError(error instanceof Error ? error.message : "Docker unavailable")
+        };
       }
     })
   );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Containers</h1>
-        <p className="text-sm text-muted-foreground">Inspect Docker state, open logs, and restart containers with audit tracking.</p>
-      </div>
-      {results.map((result) => (
-        <Card key={result.server.id}>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold">{result.server.name}</h2>
-              <p className="text-sm text-muted-foreground">{result.source === "docker" ? "Live Docker data" : `Cached data: ${result.warning}`}</p>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="py-2 pr-3">Name</th>
-                  <th className="py-2 pr-3">Image</th>
-                  <th className="py-2 pr-3">State</th>
-                  <th className="py-2 pr-3">Protection</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 pr-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.containers.map((container) => (
-                  <tr key={container.id} className="border-b last:border-0">
-                    <td className="py-3 pr-3 font-medium">{container.name}</td>
-                    <td className="py-3 pr-3 text-muted-foreground">{container.image}</td>
-                    <td className="py-3 pr-3"><StatusBadge status={container.state} /></td>
-                    <td className="py-3 pr-3">
-                      <div className="flex flex-col gap-2">
-                        <ProtectionBadge level={container.protectionLevel} />
-                        <ContainerProtectionControl
-                          serverId={result.server.id}
-                          containerId={container.id}
-                          containerName={container.name}
-                          value={container.protectionLevel}
-                          overridden={container.protectionOverride ?? false}
-                        />
+      <PageHeader title="Containers" description="Docker containers on servers with container access. Every restart, stop and delete asks for a reason and is written to the activity log." />
+
+      {connected.length === 0 ? (
+        <Card>
+          <EmptyState icon={Boxes} title="No server has container access yet">
+            Open a server, choose Edit, and pick how the dashboard reaches its Docker engine. For the machine running the dashboard, re-run the installer with{" "}
+            <span className="font-mono">--with-docker</span>.
+          </EmptyState>
+        </Card>
+      ) : (
+        results.map((result) => {
+          const running = result.containers.filter((container) => container.state === "running").length;
+          return (
+            <Section
+              key={result.server.id}
+              title={<Link href={`/servers/${result.server.id}`} className="hover:underline">{result.server.name}</Link>}
+              description={result.live ? `${running} of ${result.containers.length} running` : "Showing the last known list"}
+              flush
+            >
+              {result.warning && <p className="border-b bg-warn/10 px-4 py-2 text-xs text-warn">{result.warning}</p>}
+              {result.containers.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-muted">No containers found.</p>
+              ) : (
+                <ul className="divide-y">
+                  {result.containers.map((container) => (
+                    <li key={container.id} className="grid gap-2 px-4 py-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_13rem] md:items-center">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-medium">{container.name}</p>
+                          {container.protectionLevel === "PROTECTED" && (
+                            <span title="Protected: read-only in the dashboard" className="text-muted">
+                              <Lock className="size-3.5" />
+                            </span>
+                          )}
+                        </div>
+                        <p className="truncate font-mono text-2xs text-muted">{container.image}</p>
                       </div>
-                    </td>
-                    <td className="py-3 pr-3 text-muted-foreground">{container.status}</td>
-                    <td className="py-3 pr-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Status tone={containerTone(container.state, container.status)} label={container.status || container.state} />
+                        <Tag>{protectionLabel(container.protectionLevel)}{container.protectionOverride ? " (set manually)" : ""}</Tag>
+                      </div>
                       <ContainerActions
                         serverId={result.server.id}
-                        containerId={container.id}
-                        containerName={container.name}
-                        protectionLevel={container.protectionLevel}
+                        container={container}
+                        canOperate={result.live && hasRole(role, "MAINTAINER")}
+                        canDelete={result.live && hasRole(role, "ADMIN")}
+                        canProtect={hasRole(role, "ADMIN")}
                       />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ))}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          );
+        })
+      )}
+
+      {withoutDocker > 0 && connected.length > 0 && (
+        <p className="text-xs text-muted">
+          {withoutDocker} {withoutDocker === 1 ? "server has" : "servers have"} no container access. Enable it from the server&apos;s Edit dialog.
+        </p>
+      )}
     </div>
   );
-}
-
-function ProtectionBadge({ level }: { level: string }) {
-  const tone = level === "PROTECTED" ? "bad" : level === "EPHEMERAL" ? "warn" : level === "MANAGED" ? "good" : "neutral";
-  return <Badge tone={tone}>{level}</Badge>;
 }

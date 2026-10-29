@@ -1,168 +1,111 @@
 # Deployment
 
-The supported deployment model is Docker Compose on a Linux host.
+The supported deployment is Docker Compose on a Linux host. `install.sh` does all of it for you. This page explains what the installer does, so you can run, tune or reproduce it by hand.
 
-## Production
-
-1. Create a `.env` file.
+## One-line install
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Claritys11/DevSecOps-Dashboard/main/install.sh | bash
 ```
 
-The installer checks dependencies, installs npm packages, asks for the app port
-and other required values, auto-selects the next free port when the requested
-one is busy, generates secrets, writes `.env`, validates the Compose
-configuration, and guides the deploy choices.
+| Option | Effect |
+| --- | --- |
+| `--dir PATH` | Install location. Default `/opt/devsecops-dashboard` as root, `~/devsecops-dashboard` otherwise |
+| `--port PORT` | Web UI port. Default: first free port from 3000 |
+| `--url URL` | Public URL when serving behind a domain or reverse proxy (sets `AUTH_URL`) |
+| `--email EMAIL` | Admin email. Default `admin@devsecops.local` |
+| `--with-docker` / `--no-docker` | Mount the Docker socket for container management |
+| `--no-agent` | Skip installing the agent on this machine |
+| `--public-only` | Block monitoring of private and LAN addresses |
+| `--project NAME` | Compose project name. Default `devsecopsdash`, or `devsecopsdash-2` and so on if that name is already used by a stack in another directory |
+| `--ref REF` | Branch or tag to install. Default `main` |
+| `--build` | Build the image locally instead of pulling it |
+| `--yes` | Do not ask questions; accept defaults |
+| `--uninstall` / `--purge` | Stop the stack and keep data, or stop it and delete all data |
 
-2. Review the generated output and keep the admin password and agent token
-private.
+Running it again updates the checkout and image, keeps `.env`, applies database migrations and restarts the containers.
 
-3. Start the stack.
+## What gets created
 
-```bash
-docker compose -p devsecopsdash up -d --build
+```
+~/devsecops-dashboard/
+  .env                         # all configuration and secrets (mode 600)
+  docker-compose.yml           # postgres + app + monitor-worker
+  docker-compose.docker-socket.yml   # only used when container management is enabled
 ```
 
-To generate configuration and deploy in one step:
+The stack has three containers that all use **one image**:
 
-```bash
-./install.sh --deploy
+| Service | Role |
+| --- | --- |
+| `postgres` | Data. Not published to the host. |
+| `app` | Web UI and API. Runs migrations and the idempotent bootstrap on start. Serves agent binaries and the agent installer. |
+| `monitor-worker` | Runs endpoint and certificate checks and agent freshness alerts. |
+
+`.env` is read by Compose and passed into the containers, so changing a value only needs `docker compose up -d`.
+
+## Image: pull or build
+
+`docker-compose.yml` refers to `ghcr.io/claritys11/devsecops-dashboard:latest`, and also has a `build:` section.
+
+- Fresh installs try `docker compose pull` first. If the image cannot be pulled (offline, or not published yet), the installer builds locally.
+- Running `install.sh` from a git checkout always builds, so your local changes are used.
+
+Maintainers: `.github/workflows/release.yml` publishes multi-arch images on pushes to `main` and on `v*` tags. After the first publish, set the GHCR package visibility to **public** so installs can pull it anonymously.
+
+## Reverse proxy and HTTPS
+
+Leave `AUTH_URL` empty to accept requests on any hostname. This is fine for LAN use. Behind a proxy, set it to the public URL:
+
+```env
+AUTH_URL="https://ops.example.com"
+APP_BIND="127.0.0.1"     # optional: only accept connections from the local proxy
 ```
 
-Production defaults:
+Caddy example:
 
-- PostgreSQL is not published to the host.
-- private-network endpoint monitoring is disabled;
-- Docker socket access is disabled;
-- database migrations run on startup by default;
-- database seeding does not run unless `RUN_DATABASE_SEED=true`.
+```
+ops.example.com {
+  reverse_proxy 127.0.0.1:3000
+}
+```
 
-## Coexisting With Other Docker Stacks
+The agent install command uses whatever address you opened the dashboard on, so open it by its public or LAN URL before copying the command.
 
-If the host already runs Docker workloads, Coolify, systemd-nspawn machines, or
-other Compose projects, treat this dashboard as a separate deployment. Check
-published ports before starting:
+## Container management
+
+Mounting `/var/run/docker.sock` is root-equivalent. To enable it after installing:
+
+```env
+COMPOSE_FILE="docker-compose.yml:docker-compose.docker-socket.yml"
+DOCKER_SOCKET_GID="975"   # stat -c %g /var/run/docker.sock
+```
+
+Then run `docker compose up -d`. For other hosts, expose the Docker API on a trusted network and set **Containers → Remote Docker API** on that server in the UI.
+
+## Running next to other stacks
+
+The installer picks a free port and a free Compose project name, so it does not collide with existing stacks. Check what is already listening:
 
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Ports}}'
 ss -ltnp
 ```
 
-Set a free `APP_PORT` in `.env` and make `AUTH_URL` match it. For example:
+## Start on boot
 
-```text
-APP_PORT="3003"
-AUTH_URL="http://localhost:3003"
-```
+Containers use `restart: unless-stopped`, so they come back after a reboot as long as Docker starts on boot (`systemctl enable docker`). `deployment/systemd/devsecops-dashboard-compose.service` is an optional unit if you prefer systemd to own the stack.
 
-Use a unique Compose project name when installing next to other stacks:
+## Backups
 
 ```bash
-./install.sh --deploy --project devsecopsdash
+docker compose exec -T postgres pg_dump -U devsecops devsecops_dashboard | gzip > backup-$(date +%F).sql.gz
 ```
 
-Avoid the development override on shared hosts unless you intentionally need a
-published PostgreSQL port. `docker-compose.dev.yml` exposes Postgres through
-`POSTGRES_HOST_PORT`, which can conflict with existing databases. If you do need
-the development override, let the installer pick free ports:
+Restore into an empty database:
 
 ```bash
-./install.sh --dev --deploy
+gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U devsecops devsecops_dashboard
 ```
 
-Keep these values disabled for a first install on a busy host:
-
-```text
-RUN_DATABASE_SEED="false"
-SEED_DASHBOARD_ENDPOINT="false"
-SEED_HOMELAB_EXAMPLES="false"
-MONITOR_ALLOW_PRIVATE_NETWORKS="false"
-ENABLE_DOCKER_SOCKET="false"
-```
-
-Alternatives for multi-environment setups:
-
-- Use the Go agent on each host or systemd-nspawn machine for host metrics.
-- Put the dashboard behind an existing reverse proxy such as Coolify or Traefik
-  instead of binding ports 80 or 443 directly.
-- If container inventory is needed, prefer a dedicated Docker endpoint for the
-  target environment. Mount `/var/run/docker.sock` only for a trusted host where
-  dashboard admins are allowed Docker-equivalent access.
-
-Useful installer flags:
-
-```text
---port 3018              start app port detection from 3018
---url https://dash.example.com
---project devsecopsdash  set the Compose project name
---dev                    include docker-compose.dev.yml and detect POSTGRES_HOST_PORT
---seed                   create the initial admin and agent credential
---deploy                 build, start, and seed in one run
---self-monitor           seed an internal dashboard health endpoint
---with-docker-socket     opt in to Docker socket access
---force                  replace an existing .env
---yes                    accept defaults for non-interactive installs
-```
-
-The same automation is available through npm:
-
-```bash
-npm run setup:install -- --deploy
-```
-
-## Development
-
-Use the development override for local database access and homelab-friendly monitoring.
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-```
-
-The dev override publishes PostgreSQL on `POSTGRES_HOST_PORT` and sets `MONITOR_ALLOW_PRIVATE_NETWORKS=true` unless overridden.
-
-## Docker Socket Access
-
-Docker socket access is privileged. A process with access to `/var/run/docker.sock` can usually gain host-level control.
-
-Enable it only when you need container inventory/actions from the dashboard host:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.docker-socket.yml --profile docker-socket up -d --build
-```
-
-This sets `ENABLE_DOCKER_SOCKET=true` and mounts the socket read-only. Read-only bind mounting limits filesystem writes to the socket path but does not make Docker API access safe.
-
-## Migrations
-
-`RUN_DATABASE_MIGRATIONS=true` runs `prisma migrate deploy` before the app starts. If migrations fail, the container exits instead of serving against an unknown schema.
-
-For manual migration control:
-
-```bash
-RUN_DATABASE_MIGRATIONS=false docker compose up -d app
-docker compose run --rm app npx prisma migrate deploy
-```
-
-## Seeding
-
-Production does not seed automatically. To seed the first admin, endpoints, and agent credentials:
-
-```bash
-RUN_DATABASE_SEED=true docker compose run --rm app npm run prisma:seed
-```
-
-Do not keep placeholder admin passwords or agent tokens.
-
-## Health Checks
-
-Compose defines health checks for PostgreSQL, the app API, and the monitor worker process. Use:
-
-```bash
-docker compose ps
-docker compose logs app postgres monitor-worker
-```
-
-## Resource Limits
-
-The Compose file includes portable `deploy.resources.limits` recommendations. Some non-Swarm Compose runtimes treat these as advisory metadata. Enforce host-level limits with your container runtime or service manager if your environment ignores them.
+Keep a copy of `.env` with the backup. It holds `AUTH_SECRET` and the database password.

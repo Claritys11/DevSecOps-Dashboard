@@ -9,7 +9,7 @@ flowchart LR
   App --> DB[(PostgreSQL)]
   Worker[monitor worker] --> DB
   Worker -->|HTTP and TLS checks| Endpoints[Configured endpoints]
-  App -. optional privileged profile .-> Docker[Docker socket or Docker endpoint]
+  App -. optional socket override .-> Docker[Docker socket or Docker endpoint]
 ```
 
 ## Components

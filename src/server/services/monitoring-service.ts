@@ -55,7 +55,7 @@ export async function checkEndpoint(endpointId: string) {
       data: {
         endpointId,
         status: ServiceStatus.DOWN,
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: describeNetworkError(error)
       }
     });
 
@@ -90,67 +90,87 @@ export async function checkSslCertificate(endpointId: string): Promise<SslCertif
     return check;
   }
 
-  await validateMonitorUrl(endpoint.url);
+  try {
+    await validateMonitorUrl(endpoint.url);
+  } catch (error) {
+    const check = await prisma.sslCertificateCheck.create({ data: { endpointId, status: ServiceStatus.DOWN, error: describeNetworkError(error) } });
+    await evaluateSslAlert(endpointId, check);
+    return check;
+  }
 
-  return new Promise<SslCertificateCheck>((resolve, reject) => {
+  const timeoutMs = endpoint.timeoutMs ?? monitoringConfig().defaultTimeoutMs;
+  const result = await new Promise<{ cert: tls.PeerCertificate } | { error: string }>((resolve) => {
+    let settled = false;
+    const finish = (value: { cert: tls.PeerCertificate } | { error: string }) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
     const socket = tls.connect(
       {
         host: url.hostname,
         port: Number(url.port || 443),
-        servername: url.hostname,
-        timeout: endpoint.timeoutMs ?? monitoringConfig().defaultTimeoutMs
+        // SNI must not be an IP address.
+        servername: net.isIP(url.hostname) ? undefined : url.hostname,
+        timeout: timeoutMs
       },
-      async () => {
-        const cert = socket.getPeerCertificate();
-        socket.end();
-
-        const validTo = cert.valid_to ? new Date(cert.valid_to) : null;
-        const validFrom = cert.valid_from ? new Date(cert.valid_from) : null;
-        const daysUntilExpiry = validTo ? differenceInCalendarDays(validTo, new Date()) : null;
-        const status = daysUntilExpiry == null ? ServiceStatus.UNKNOWN : daysUntilExpiry < 14 ? ServiceStatus.DEGRADED : ServiceStatus.HEALTHY;
-
-        const issuerValue = typeof cert.issuer === "object" ? cert.issuer.O : undefined;
-        const issuer = Array.isArray(issuerValue) ? issuerValue.join(", ") : issuerValue;
-
-        const check = await prisma.sslCertificateCheck.create({
-            data: {
-              endpointId,
-              issuer,
-              validFrom,
-              validTo,
-              daysUntilExpiry,
-              fingerprint: cert.fingerprint256,
-              status
-            }
-          });
-        await evaluateSslAlert(endpointId, check);
-        resolve(check);
-      }
+      () => finish({ cert: socket.getPeerCertificate() })
     );
+    // Without the settled guard, the idle timeout fired after a successful handshake and recorded a false failure.
+    socket.on("timeout", () => finish({ error: "TLS connection timed out" }));
+    socket.on("error", (error) => finish({ error: describeNetworkError(error) }));
+  });
 
-    socket.on("timeout", async () => {
-      socket.destroy();
-      const check = await prisma.sslCertificateCheck.create({
-          data: { endpointId, status: ServiceStatus.DOWN, error: "TLS connection timed out" }
-        });
-      await evaluateSslAlert(endpointId, check);
-      resolve(check);
-    });
-
-    socket.on("error", async (error) => {
-      reject(error);
-    });
-  }).catch(async (error) => {
-    const check = await prisma.sslCertificateCheck.create({
-      data: {
-        endpointId,
-        status: ServiceStatus.DOWN,
-        error: error instanceof Error ? error.message : "Unknown TLS error"
-      }
-    });
+  if ("error" in result) {
+    const check = await prisma.sslCertificateCheck.create({ data: { endpointId, status: ServiceStatus.DOWN, error: result.error } });
     await evaluateSslAlert(endpointId, check);
     return check;
+  }
+
+  const { cert } = result;
+  const validTo = cert.valid_to ? new Date(cert.valid_to) : null;
+  const validFrom = cert.valid_from ? new Date(cert.valid_from) : null;
+  const daysUntilExpiry = validTo ? differenceInCalendarDays(validTo, new Date()) : null;
+  const sslWarnDays = Number(process.env.ALERT_SSL_EXPIRING_DAYS ?? 14);
+  const status = daysUntilExpiry == null ? ServiceStatus.UNKNOWN : daysUntilExpiry < sslWarnDays ? ServiceStatus.DEGRADED : ServiceStatus.HEALTHY;
+  const issuerValue = typeof cert.issuer === "object" ? cert.issuer.O : undefined;
+  const issuer = Array.isArray(issuerValue) ? issuerValue.join(", ") : issuerValue;
+
+  const check = await prisma.sslCertificateCheck.create({
+    data: { endpointId, issuer, validFrom, validTo, daysUntilExpiry, fingerprint: cert.fingerprint256, status }
   });
+  await evaluateSslAlert(endpointId, check);
+  return check;
+}
+
+const networkErrors: Record<string, string> = {
+  ECONNREFUSED: "Connection refused. Nothing is listening on that port.",
+  ECONNRESET: "The connection was reset by the server.",
+  ENOTFOUND: "Hostname does not resolve.",
+  EAI_AGAIN: "DNS lookup failed (temporary). Check the worker's DNS.",
+  EHOSTUNREACH: "Host is unreachable from the dashboard.",
+  ENETUNREACH: "Network is unreachable from the dashboard.",
+  ETIMEDOUT: "Connection timed out.",
+  CERT_HAS_EXPIRED: "TLS certificate has expired.",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "TLS certificate is self-signed.",
+  SELF_SIGNED_CERT_IN_CHAIN: "TLS certificate chain contains a self-signed certificate.",
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "TLS certificate cannot be verified.",
+  ERR_TLS_CERT_ALTNAME_INVALID: "TLS certificate does not match the hostname."
+};
+
+/** Node's fetch reports "fetch failed" and hides the real reason in `cause`. */
+export function describeNetworkError(error: unknown): string {
+  if (!(error instanceof Error)) return "Unknown error";
+  if (error.name === "TimeoutError" || error.name === "AbortError") return "Request timed out.";
+  const cause = (error as Error & { cause?: unknown }).cause;
+  const code = (cause as { code?: string } | undefined)?.code ?? (error as Error & { code?: string }).code;
+  if (code && networkErrors[code]) return networkErrors[code];
+  if (cause instanceof Error && cause.message === "bad port") {
+    return "This port is on the fetch blocked-ports list (for example 9, 25, 6000). Use a different port.";
+  }
+  if (cause instanceof Error && cause.message) return cause.message;
+  return error.message;
 }
 
 export async function guardedFetch(initialUrl: string, requestTimeoutMs: number) {

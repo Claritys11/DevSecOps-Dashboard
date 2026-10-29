@@ -1,50 +1,63 @@
-# Agent Installation
+# Agent
 
-The Go agent pushes heartbeat and metrics to the dashboard. The dashboard does not SSH into servers.
+The agent is a single static Go binary (amd64 and arm64). It reads `/proc`, `/etc/os-release` and `statfs("/")`, and pushes a sample to the dashboard every 30 seconds. It does not run shell commands, does not read environment variables beyond its own config, and needs no inbound ports.
 
-## Configure Credentials
+## Install from the dashboard
 
-Seed or create an agent credential, then configure the agent with matching values:
-
-```bash
-export DASHBOARD_URL="https://dashboard.example.com"
-export AGENT_ID="primary-linux-agent"
-export AGENT_SECRET="generated-agent-token"
-export SERVER_NAME="linux-host-01"
-```
-
-The agent rejects missing or placeholder credentials.
-
-## Run Locally
+1. Open **Servers**, then **Add server** (or **Install agent** on an existing server).
+2. Run the command it gives you on the target machine:
 
 ```bash
-cd agent
-go run ./cmd/agent
+curl -fsSL http://DASHBOARD/api/agents/install | sudo sh -s -- --url http://DASHBOARD --id AGENT_ID --token TOKEN
 ```
 
-## Build
+The script:
+
+- downloads the matching binary from `DASHBOARD/api/agents/download/linux-<arch>` to `/usr/local/bin/devsecops-agent`,
+- creates a `devsecops-agent` system user,
+- writes `/etc/devsecops-agent.env` (mode 600),
+- installs and starts a hardened `devsecops-agent` systemd service.
+
+Tokens are stored hashed, so a token is only shown once. **Install agent** on a connected server issues a new token and disconnects the old one.
+
+## Options
+
+| Flag | Meaning |
+| --- | --- |
+| `--url` | Dashboard URL as seen from the server |
+| `--id`, `--token` | Credentials from the dashboard |
+| `--name` | Display hostname sent by the agent (defaults to the machine hostname) |
+| `--interval` | Seconds between samples (default 30) |
+| `--uninstall` | Stop and remove the agent |
+
+## Operating it
+
+```bash
+systemctl status devsecops-agent
+journalctl -u devsecops-agent -f
+sudo cat /etc/devsecops-agent.env
+```
+
+## Without systemd
+
+The installer still places the binary and env file, then prints how to start it. Any supervisor works:
+
+```bash
+set -a; . /etc/devsecops-agent.env; set +a; /usr/local/bin/devsecops-agent
+```
+
+## Building from source
 
 ```bash
 cd agent
 go build -o devsecops-agent ./cmd/agent
 ```
 
-## systemd
+Or run `npm run agent:build` from the repository root to build `agent/dist/` for both architectures, which the development server then serves.
 
-Use `deployment/systemd/devsecops-agent.service` as a starting point. Put secrets in `/etc/devsecops-agent.env` with permissions limited to root and the agent service account.
+## Notes
 
-```text
-DASHBOARD_URL=https://dashboard.example.com
-AGENT_ID=primary-linux-agent
-AGENT_SECRET=generated-agent-token
-SERVER_NAME=linux-host-01
-COLLECTION_INTERVAL_SECONDS=30
-REQUEST_TIMEOUT_SECONDS=10
-```
-
-## Security Notes
-
-- Use one agent credential per host.
-- Rotate tokens by creating a new credential and revoking the old one.
-- The agent reads Linux proc/sys files and filesystem stats. It does not run arbitrary shell commands.
-- Do not commit `/etc/devsecops-agent.env`, `.env`, or token values.
+- CPU usage is computed from `/proc/stat` deltas, so the first sample reports 0%.
+- Network counters are summed across non-loopback interfaces. The dashboard shows them as a rate.
+- Disk usage is for `/`.
+- Containers are read by the dashboard (Docker socket or API), not by the agent.

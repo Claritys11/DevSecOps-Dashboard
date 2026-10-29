@@ -1,32 +1,32 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/server/auth/guards";
+import { requireRole } from "@/server/auth/guards";
 import { prisma } from "@/lib/prisma";
+import { badRequest, isNotFound } from "@/server/http";
 import { writeAuditLog } from "@/server/services/audit-service";
 
 export async function POST(request: Request, { params }: { params: Promise<{ alertId: string }> }) {
-  const authResult = await requireUser();
+  const authResult = await requireRole("MAINTAINER");
   if ("response" in authResult) return authResult.response;
-  if (authResult.session.user.role === "VIEWER") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const { alertId } = await params;
-  const alert = await prisma.alert.update({
-    where: { id: alertId },
-    data: {
-      acknowledgedAt: new Date(),
-      acknowledgedById: authResult.session.user.id
-    }
-  });
+  try {
+    const alert = await prisma.alert.update({
+      where: { id: alertId },
+      data: { acknowledgedAt: new Date(), acknowledgedById: authResult.session.user.id }
+    });
 
-  await writeAuditLog({
-    userId: authResult.session.user.id,
-    action: "SETTINGS_UPDATE",
-    targetType: "alert",
-    targetId: alertId,
-    metadata: { ruleType: alert.ruleType, resourceType: alert.resourceType, resourceId: alert.resourceId, action: "acknowledge" },
-    request
-  });
+    await writeAuditLog({
+      userId: authResult.session.user.id,
+      action: "ALERT_ACK",
+      targetType: "alert",
+      targetId: alertId,
+      metadata: { title: alert.title, ruleType: alert.ruleType, resourceType: alert.resourceType, resourceId: alert.resourceId },
+      request
+    });
 
-  return NextResponse.json(alert);
+    return NextResponse.json(alert);
+  } catch (error) {
+    if (isNotFound(error)) return badRequest("Alert not found", 404);
+    throw error;
+  }
 }
