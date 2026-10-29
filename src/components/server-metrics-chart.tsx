@@ -39,7 +39,7 @@ export function ServerMetricsChart({ data, thresholds }: { data: MetricPoint[]; 
                 {item.unit}
               </span>
             </figcaption>
-            <div className="h-28 text-accent [&_.recharts-cartesian-axis-tick-value]:fill-[rgb(var(--muted))] [&_.recharts-reference-line_line]:stroke-[rgb(var(--crit))]">
+            <div className="h-28 text-accent [&_.recharts-cartesian-axis-tick-value]:fill-[rgb(var(--muted))]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                   <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} scale="time" tickFormatter={(value) => formatTick(value, span)} tickLine={false} axisLine={false} fontSize={10} minTickGap={40} />
@@ -50,7 +50,7 @@ export function ServerMetricsChart({ data, thresholds }: { data: MetricPoint[]; 
                     labelFormatter={(value) => new Date(Number(value)).toLocaleString()}
                     formatter={(value) => [`${Number(value).toFixed(item.unit ? 1 : 2)}${item.unit}`, item.label]}
                   />
-                  {threshold != null && <ReferenceLine y={threshold} className="text-crit" stroke="currentColor" strokeDasharray="3 3" strokeOpacity={0.7} />}
+                  {threshold != null && <ReferenceLine y={threshold} className="text-crit" stroke="currentColor" strokeDasharray="4 3" strokeOpacity={0.9} strokeWidth={1.25} />}
                   <Area type="monotone" dataKey={item.key} stroke="currentColor" fill="currentColor" fillOpacity={0.12} strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
