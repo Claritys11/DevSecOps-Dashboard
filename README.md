@@ -1,172 +1,118 @@
 # DevSecOps Dashboard
 
-DevSecOps Dashboard is a self-hosted infrastructure monitoring dashboard for Linux hosts, Docker containers, HTTP endpoints, SSL certificates, alerts, and audit logs.
+Self-hosted monitoring for the machines and services you run yourself. It shows whether everything is OK at a glance, and what is wrong when something is not.
 
-> Project maturity: this is a working MVP, not a hardened 1.0 release. It is suitable for self-hosted evaluation and contribution, but operators should review the security model, deployment docs, and configuration before exposing it to a network.
+- **Servers**: CPU, memory, disk, load and network from a tiny Go agent (no dependencies, ~6 MB).
+- **Endpoints**: HTTP(S) uptime, response time, status code and TLS certificate expiry.
+- **Containers**: Docker state and logs, plus restart, stop and delete with a required reason and an audit trail.
+- **Alerts**: open and close on their own based on thresholds, with acknowledgement.
+- **Users and roles**: viewer, maintainer and admin.
 
-## Implemented Features
+## Install
 
-- Email/password dashboard login with role-aware server-side guards.
-- Linux host heartbeat and metrics ingestion from a Go agent.
-- Server inventory, metrics charts, endpoint checks, SSL certificate checks, alerts, and audit logs.
-- Container inventory and guarded container actions when Docker access is explicitly configured.
-- Prisma/PostgreSQL persistence with migrations and seed support.
-- Docker Compose deployment files, health checks, preflight validation, and CI.
+On a Linux host with [Docker](https://docs.docker.com/engine/install/):
 
-## Planned Or Incomplete
+```bash
+curl -fsSL https://raw.githubusercontent.com/Claritys11/DevSecOps-Dashboard/main/install.sh | bash
+```
 
-- User and role management UI.
-- Notification channels for alerts.
-- Public/read-only status page.
-- Signed release artifacts and formal release automation.
-- Broader packaging beyond Docker Compose.
+The installer:
 
-## Architecture
+1. downloads the dashboard to `~/devsecops-dashboard` (or `/opt/devsecops-dashboard` as root),
+2. generates every secret and an admin password,
+3. picks a free port (starting at 3000),
+4. pulls or builds the image and starts it,
+5. optionally installs the agent on the same machine, so you see data right away,
+6. prints the URL and your login.
+
+It asks three yes/no questions. Add `--yes` to accept the defaults, or see all options with `--help`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Claritys11/DevSecOps-Dashboard/main/install.sh | bash -s -- --port 8080 --with-docker --yes
+```
+
+Re-running the same command **updates** an existing install and keeps your `.env` and data.
+
+## Add a server
+
+1. In the dashboard, open **Servers** and click **Add server**.
+2. Copy the command it shows. It looks like this:
+
+   ```bash
+   curl -fsSL http://192.168.1.10:3000/api/agents/install | sudo sh -s -- --url http://192.168.1.10:3000 --id nas-1a2b3c --token …
+   ```
+
+3. Run it on the machine you want to monitor. The server turns green within a minute.
+
+The agent binary is served by your dashboard (amd64 and arm64), so monitored machines need nothing besides `curl` and systemd. To remove an agent, run `curl -fsSL <dashboard>/api/agents/install | sudo sh -s -- --uninstall`.
+
+## Add an endpoint
+
+Open **Endpoints**, click **Add endpoint**, paste a URL and save. The first check runs within seconds.
+
+Local addresses (`192.168.x.x`, `10.x.x.x`, `localhost`) are allowed when you answered yes to the installer's local network question. This is stored as `MONITOR_ALLOW_PRIVATE_NETWORKS=true` in `.env`. Cloud metadata addresses are always blocked.
+
+## Day-to-day
+
+```bash
+cd ~/devsecops-dashboard
+docker compose ps              # status
+docker compose logs -f app     # logs
+docker compose down            # stop (data is kept)
+docker compose up -d           # start again
+```
+
+| Task | How |
+| --- | --- |
+| Update | Re-run the install command |
+| Change a setting | Edit `.env`, then `docker compose up -d` |
+| Reset the admin password | Set `ADMIN_RESET_PASSWORD=true` in `.env`, run `docker compose up -d`, then set it back |
+| Manage containers on this host | Re-install with `--with-docker`, or add `docker-compose.docker-socket.yml` to `COMPOSE_FILE` in `.env` |
+| Put it behind a domain | Set `AUTH_URL=https://ops.example.com` in `.env` and proxy to `APP_PORT` |
+| Uninstall | `bash install.sh --uninstall` (keeps data) or `--purge` (deletes data) |
+
+All settings are documented in [docs/configuration.md](docs/configuration.md).
+
+## How it works
 
 ```mermaid
 flowchart LR
-  Browser[Authenticated browser] --> App[Next.js app and API]
-  Agent[Go agent] -->|heartbeat and metrics push| App
+  Browser --> App[Dashboard: Next.js app and API]
+  Agent[Agent on each server] -->|pushes metrics every 30s| App
   App --> DB[(PostgreSQL)]
-  Worker[monitor worker] --> DB
-  Worker -->|HTTP and TLS checks| Endpoints[Configured endpoints]
-  App -. optional privileged profile .-> Docker[Docker socket or Docker endpoint]
+  Worker[Monitor worker] --> DB
+  Worker -->|HTTP and TLS checks| Endpoints[Your endpoints]
+  App -. optional .-> Docker[Docker socket or API]
 ```
 
-See [docs/architecture.md](docs/architecture.md) for component and trust-boundary details.
+Agents push outbound to the dashboard, so monitored machines do not need any open ports. Each agent has its own token. Only a hash of the token is stored, and every request is checked for timestamp, nonce and body hash. More detail is in [docs/architecture.md](docs/architecture.md).
 
-## Secure Quickstart
+## Security notes
 
-Requirements:
+- Mounting the Docker socket (`--with-docker`) gives the dashboard root-equivalent access to that host. Only enable it if you need container management.
+- Protected containers (databases, proxies, the dashboard itself) are read-only in the UI. Every container action requires a reason and is logged.
+- Sign-in is rate limited. Passwords are hashed with Argon2id.
+- Serve the dashboard over HTTPS (reverse proxy) if it is reachable from outside your network.
 
-- Node.js 22 or newer
-- npm
-- Docker and Docker Compose
-- Go 1.22 or newer only for agent development
-
-Run the guided installer:
-
-```bash
-./install.sh
-```
-
-The installer checks dependencies, installs npm packages, asks for the required
-values, auto-selects the next free port when your requested port is busy,
-generates `.env`, validates the config, and can build/start the Compose stack in
-the same run.
-
-Start a development stack manually:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-```
-
-Open the dashboard at the `AUTH_URL`/`APP_PORT` you configured, commonly:
-
-```text
-http://localhost:3003
-```
-
-Production uses the base Compose file:
-
-```bash
-./install.sh --deploy
-```
-
-Production defaults fail closed for required secrets, keep PostgreSQL private to the Compose network, disable private-network endpoint monitoring, disable Docker socket access, run migrations before startup, and skip seed data unless `RUN_DATABASE_SEED=true`.
-
-If the host already runs other Docker stacks, Coolify, or systemd-nspawn
-machines, review the coexistence notes before deploying. Use a free `APP_PORT`,
-match `AUTH_URL`, and prefer a unique Compose project name:
-
-```bash
-./install.sh --deploy --project devsecopsdash
-```
-
-See [Deployment](docs/deployment.md#coexisting-with-other-docker-stacks).
-
-## Screenshots
-
-Screenshots are not included yet. Do not add generated or unrelated screenshots; only add current screenshots captured from the working application.
-
-## Supported Deployment Model
-
-The supported deployment model is Docker Compose on a Linux host:
-
-- `docker-compose.yml`: production-safe base.
-- `docker-compose.dev.yml`: local development override with a published database port and homelab-friendly private monitoring.
-- `docker-compose.docker-socket.yml`: explicit privileged Docker socket override/profile.
-
-See [docs/deployment.md](docs/deployment.md).
-
-## Agent Overview
-
-The Go agent uses outbound push:
-
-```text
-agent -> dashboard /api/agents/heartbeat
-agent -> dashboard /api/agents/metrics
-```
-
-The agent requires `DASHBOARD_URL`, `AGENT_ID`, and `AGENT_SECRET`; placeholder credentials are rejected. See [docs/agent-installation.md](docs/agent-installation.md).
-
-## Security Model
-
-- Dashboard users authenticate through NextAuth credentials.
-- Agent tokens are hashed in the database and validated with timestamp, nonce, and request-body hash checks.
-- Endpoint monitoring supports only HTTP and HTTPS.
-- Private, loopback, link-local, and unique-local targets are blocked by default.
-- Cloud metadata addresses stay blocked even when private-network monitoring is enabled.
-- Redirect targets are revalidated before each fetch.
-- DNS rebinding cannot be fully eliminated by application checks; run the worker in a network context appropriate for the endpoints you trust.
-- Docker socket access is host-equivalent and disabled by default.
-
-See [SECURITY.md](SECURITY.md) and [docs/configuration.md](docs/configuration.md).
-
-## Documentation
-
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/deployment.md)
-- [Configuration](docs/configuration.md)
-- [Agent installation](docs/agent-installation.md)
-- [Upgrading](docs/upgrading.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Maintainer GitHub settings](docs/maintainer/github-settings.md)
-- [Contributing](CONTRIBUTING.md)
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## Development
 
 ```bash
 npm ci
-npm run setup
+npm run setup            # writes a development .env
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
-npm run prisma:deploy
-npm run prisma:seed
+npm run prisma:deploy && npm run prisma:seed
+npm run agent:build      # optional: lets the dev server hand out agent binaries
 npm run dev -- -p 3003
 ```
 
-Validation:
+`npm run validate` runs lint, type checks, tests and a production build. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
-cd agent && go test ./...
-docker compose config
-docker build --target runner -t devsecops-dashboard:local .
-```
+## Documentation
 
-## Roadmap
-
-Near-term work should focus on:
-
-- cleaner user and role administration;
-- alert notification channels;
-- release packaging and signed artifacts;
-- expanded tests around authorization and Docker safety;
-- better UI flows for sensitive container actions.
+[Deployment](docs/deployment.md) · [Configuration](docs/configuration.md) · [Agent](docs/agent-installation.md) · [Upgrading](docs/upgrading.md) · [Troubleshooting](docs/troubleshooting.md) · [Architecture](docs/architecture.md)
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+[Apache 2.0](LICENSE)

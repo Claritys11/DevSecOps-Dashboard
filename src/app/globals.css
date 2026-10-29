@@ -2,32 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Colour is reserved for status. Chrome stays neutral so a red cell is never ambiguous. */
 :root {
-  --background: 210 20% 98%;
-  --foreground: 220 25% 12%;
-  --card: 0 0% 100%;
-  --card-foreground: 220 25% 12%;
-  --muted: 210 18% 92%;
-  --muted-foreground: 218 12% 42%;
-  --primary: 173 70% 30%;
-  --primary-foreground: 0 0% 100%;
-  --destructive: 0 72% 45%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 214 17% 84%;
-  --input: 214 17% 84%;
-  --ring: 173 70% 30%;
+  --bg: 244 246 249;
+  --surface: 255 255 255;
+  --raised: 236 240 245;
+  --line: 219 225 233;
+  --fg: 19 25 34;
+  --muted: 88 99 116;
+  --accent: 37 99 235;
+  --accent-fg: 255 255 255;
+  --ok: 16 140 88;
+  --warn: 178 116 18;
+  --crit: 205 52 52;
+  --idle: 148 158 175;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 15 19 26;
+  --surface: 21 27 36;
+  --raised: 28 35 47;
+  --line: 39 48 63;
+  --fg: 228 233 240;
+  --muted: 139 150 168;
+  --accent: 110 168 254;
+  --accent-fg: 10 18 32;
+  --ok: 61 214 140;
+  --warn: 245 185 70;
+  --crit: 247 107 107;
+  --idle: 88 99 118;
+  color-scheme: dark;
 }
 
 * {
-  border-color: hsl(var(--border));
+  border-color: rgb(var(--line));
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-feature-settings: "ss02";
+  -webkit-font-smoothing: antialiased;
 }
 
-button,
-input {
-  font: inherit;
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+dialog[open] {
+  animation: dialog-in 140ms ease-out;
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

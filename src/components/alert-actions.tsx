@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api-client";
 
 export function AcknowledgeAlertButton({ alertId }: { alertId: string }) {
   const router = useRouter();
@@ -13,33 +13,18 @@ export function AcknowledgeAlertButton({ alertId }: { alertId: string }) {
   async function acknowledge() {
     setError(null);
     setPending(true);
-    try {
-      const response = await fetch(`/api/alerts/${alertId}/ack`, { method: "POST" });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? "Unable to acknowledge alert");
-        return;
-      }
-      router.refresh();
-    } finally {
-      setPending(false);
-    }
+    const result = await api(`/api/alerts/${alertId}/ack`, "POST");
+    setPending(false);
+    if (!result.ok) return setError(result.error);
+    router.refresh();
   }
 
   return (
-    <div className="space-y-1">
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={pending}
-        loading={pending}
-        loadingLabel="Ack..."
-        onClick={acknowledge}
-      >
-        <CheckCircle2 className="size-4" />
-        Ack
+    <div className="shrink-0 text-right">
+      <Button size="sm" loading={pending} loadingLabel="Saving" onClick={acknowledge} title="Mark as seen. It stays listed until the problem is resolved.">
+        Acknowledge
       </Button>
-      {error && <p className="text-xs text-rose-700">{error}</p>}
+      {error && <p className="mt-1 max-w-48 text-2xs text-crit">{error}</p>}
     </div>
   );
 }

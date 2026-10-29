@@ -1,80 +1,61 @@
 # Troubleshooting
 
-## Preflight Fails
-
-Run:
+Start with the container status and the app log. They usually name the problem.
 
 ```bash
-npm run preflight -- --production
-```
-
-Replace placeholder values, fix malformed URLs, align `APP_PORT` and localhost `AUTH_URL`, and avoid `DOCKER_SOCKET_PATH` unless `ENABLE_DOCKER_SOCKET=true` is intentional.
-
-If your `.env` was created before the generic agent names were introduced, remove old placeholder lines such as:
-
-```text
-CACHYOS_AGENT_TOKEN="change-me-cachyos-agent-token"
-UBUNTU_NSPAWN_AGENT_TOKEN="change-me-ubuntu-nspawn-agent-token"
-```
-
-Then use `PRIMARY_AGENT_ID` and `PRIMARY_AGENT_TOKEN`, or regenerate the file:
-
-```bash
-npm run setup -- --force
-```
-
-## Docker Build Fails During npm ci
-
-Prisma downloads engine packages during `npm ci`. If Docker logs show `ECONNRESET` from `@prisma/engines`, retry the build after checking network/DNS access from Docker:
-
-```bash
-docker compose build --no-cache app
-```
-
-The Dockerfile configures npm fetch retries, but a hard network reset can still fail a single build attempt.
-
-## App Does Not Start
-
-Check:
-
-```bash
+cd ~/devsecops-dashboard
 docker compose ps
-docker compose logs app
-docker compose logs postgres
+docker compose logs --tail 100 app
+docker compose logs --tail 100 monitor-worker
 ```
 
-Common causes are missing secrets, failed migrations, unavailable PostgreSQL, or an incorrect `AUTH_URL`.
+## The installer says the dashboard did not become healthy
 
-## Cannot Log In
+The installer prints the last app log lines. Common causes:
 
-The admin user is created by the seed command. If seeding was skipped, run it intentionally:
+- **`Configuration preflight failed`**: a value in `.env` is a placeholder or malformed. The message names the variable.
+- **`P1001: Can't reach database server`**: Postgres is still starting or crashed. Run `docker compose logs postgres`.
+- **Port already in use**: re-run with `--port`, or change `APP_PORT` in `.env`.
+
+## I cannot sign in
+
+- The installer printed the admin email and password, and they are saved in `.env` as `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+- If you changed the password in the UI and forgot it, set `ADMIN_RESET_PASSWORD=true` in `.env`, run `docker compose up -d`, sign in with `ADMIN_PASSWORD`, then set it back to `false`.
+- After 10 failed attempts for an email, sign-in for that email pauses for 15 minutes.
+- If login redirects to the wrong host, clear `AUTH_URL` in `.env` or set it to the address you actually use.
+
+## A server stays "Waiting for agent" or turns "Offline"
+
+On that server:
 
 ```bash
-RUN_DATABASE_SEED=true docker compose run --rm app npm run prisma:seed
+systemctl status devsecops-agent
+journalctl -u devsecops-agent -n 50
 ```
 
-Use the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from your environment.
+- **`connection refused` / `no such host`**: the agent cannot reach `DASHBOARD_URL` in `/etc/devsecops-agent.env`. Use the dashboard's LAN address, not `localhost`, for other machines.
+- **`dashboard returned 401`**: the token was replaced or the clock is off by more than 5 minutes. Use **Install agent** on the server page to get a fresh command, and check `timedatectl`.
+- **`download failed`** during install: the dashboard URL in the command is not reachable from that machine.
 
-## Endpoint Checks Fail
+## An endpoint shows "Blocked monitor target address"
 
-Production blocks private and loopback targets by default. For trusted homelab monitoring, set:
+Private and local addresses are blocked unless `MONITOR_ALLOW_PRIVATE_NETWORKS=true` is set in `.env`. After changing it, run `docker compose up -d`. To reach services on the Docker host itself, use the host's LAN IP rather than `localhost`, because `localhost` inside the worker container is the container.
 
-```text
-MONITOR_ALLOW_PRIVATE_NETWORKS=true
+## Containers page says it cannot reach the Docker socket
+
+Container management for the dashboard host is off by default. Enable it:
+
+```env
+COMPOSE_FILE="docker-compose.yml:docker-compose.docker-socket.yml"
+DOCKER_SOCKET_GID="<output of: stat -c %g /var/run/docker.sock>"
 ```
 
-Cloud metadata addresses remain blocked.
+Then run `docker compose up -d`.
 
-## Docker Containers Show Cached Data
+## Upgrades fail to migrate
 
-The dashboard falls back to cached container records when Docker is unavailable. To enable live host Docker access, use the Docker socket override and understand the host-equivalent privileges.
+```bash
+docker compose run --rm app npx prisma migrate status
+```
 
-## Agent Is Rejected
-
-Check:
-
-- `DASHBOARD_URL` is reachable from the host running the agent;
-- `AGENT_ID` matches a database credential;
-- `AGENT_SECRET` matches the original token;
-- system clocks are within `AGENT_MAX_CLOCK_SKEW_SECONDS`;
-- the token was not revoked.
+Restore from your last backup if a migration was interrupted. See [deployment.md](deployment.md#backups).

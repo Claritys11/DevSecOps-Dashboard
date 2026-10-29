@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { guardedFetch, isBlockedAddress } from "@/server/services/monitoring-service";
+import { describeNetworkError, guardedFetch, isBlockedAddress } from "@/server/services/monitoring-service";
 
 test("private networks are blocked by default while cloud metadata stays blocked when private monitoring is enabled", () => {
   const previous = process.env.MONITOR_ALLOW_PRIVATE_NETWORKS;
@@ -40,4 +40,11 @@ test("guardedFetch validates redirect targets", async () => {
     delete process.env.MONITOR_ALLOW_PRIVATE_NETWORKS;
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
+});
+
+test("describeNetworkError surfaces the cause hidden behind 'fetch failed'", () => {
+  const refused = Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:9"), { code: "ECONNREFUSED" }) });
+  assert.match(describeNetworkError(refused), /Connection refused/);
+  const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+  assert.equal(describeNetworkError(timeout), "Request timed out.");
 });

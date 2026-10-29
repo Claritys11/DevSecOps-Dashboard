@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Generates .env for local development (npm run dev). For servers use ./install.sh.
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -48,7 +49,6 @@ try {
   const adminEmail = await ask(rl, "Admin email", "admin@example.com");
   const adminPassword = yes ? token() : await ask(rl, "Admin password", token());
   const postgresPassword = yes ? token() : await ask(rl, "Postgres password", token());
-  const seedHomelab = yes ? "false" : await ask(rl, "Seed example homelab endpoints? true/false", "false");
 
   env = setEnv(env, "AUTH_URL", appUrl);
   env = setEnv(env, "AUTH_SECRET", secret());
@@ -56,19 +56,9 @@ try {
   env = setEnv(env, "ADMIN_PASSWORD", adminPassword);
   env = setEnv(env, "POSTGRES_PASSWORD", postgresPassword);
   env = setEnv(env, "DATABASE_URL", `postgresql://devsecops:${postgresPassword}@localhost:5433/devsecops_dashboard?schema=public`);
-  env = setEnv(env, "DASHBOARD_HEALTH_URL", `${appUrl.replace(/\/$/, "")}/api/health`);
-  env = setEnv(env, "RUN_DATABASE_SEED", "false");
-  env = setEnv(env, "MONITOR_ALLOW_PRIVATE_NETWORKS", "false");
+  env = setEnv(env, "MONITOR_ALLOW_PRIVATE_NETWORKS", "true");
   env = setEnv(env, "PRIMARY_AGENT_ID", "primary-linux-agent");
   env = setEnv(env, "PRIMARY_AGENT_TOKEN", token());
-  env = setEnv(env, "SECONDARY_AGENT_ID", "");
-  env = setEnv(env, "SECONDARY_AGENT_TOKEN", "");
-  env = setEnv(env, "CACHYOS_AGENT_TOKEN", "");
-  env = setEnv(env, "UBUNTU_NSPAWN_AGENT_TOKEN", "");
-  env = setEnv(env, "SEED_HOMELAB_EXAMPLES", seedHomelab.toLowerCase() === "true" ? "true" : "false");
-  if (seedHomelab.toLowerCase() === "true") {
-    env = setEnv(env, "MONITOR_ALLOW_PRIVATE_NETWORKS", "true");
-  }
 
   writeFileSync(envPath, env);
   console.log(".env generated.");

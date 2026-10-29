@@ -1,92 +1,79 @@
 # Configuration
 
-Configuration is loaded from environment variables. Run `npm run preflight` before starting a deployment.
+All configuration lives in `.env` next to `docker-compose.yml`. `install.sh` generates it. After changing a value, run `docker compose up -d`.
 
-## Required For Production
+## Required
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Prisma PostgreSQL connection string. Passed to app and worker. |
-| `AUTH_URL` | Public dashboard URL used by NextAuth. Passed to app. |
-| `AUTH_SECRET` | NextAuth secret, at least 32 characters. Passed to app. |
-| `ADMIN_EMAIL` | Initial admin email for manual seed. Passed to app. |
-| `ADMIN_PASSWORD` | Initial admin password for manual seed. Passed to app. |
-| `POSTGRES_PASSWORD` | PostgreSQL password. Passed to Postgres, app, and worker. |
+| `AUTH_SECRET` | Signs sessions. 32+ random characters. Changing it signs everyone out. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First admin account. Created on first start if it does not exist. |
+| `POSTGRES_PASSWORD` | Database password. |
 
-## Generating Values
+Production start-up refuses placeholder values such as `change-me-*`.
 
-For a fresh local `.env`, the easiest path is:
+## Web
 
-```bash
-npm run setup -- --force
-```
-
-This regenerates `.env` with random `AUTH_SECRET`, `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`, and `PRIMARY_AGENT_TOKEN`. Save the generated values somewhere private before replacing or deleting the file.
-
-To generate individual values manually:
-
-```bash
-openssl rand -base64 32
-```
-
-Use separate generated values for:
-
-- `AUTH_SECRET`
-- `POSTGRES_PASSWORD`
-- `ADMIN_PASSWORD`
-- `PRIMARY_AGENT_TOKEN`
-- any optional `SECONDARY_AGENT_TOKEN`
-
-`AUTH_URL` should be the URL users open in the browser, for example `http://localhost:3003` for local development or `https://dashboard.example.com` for production.
-
-`DATABASE_URL` must match the PostgreSQL values. For local development with the dev Compose override:
-
-```text
-DATABASE_URL="postgresql://devsecops:<POSTGRES_PASSWORD>@localhost:5433/devsecops_dashboard?schema=public"
-```
-
-Inside the production Compose network the app uses the service hostname automatically:
-
-```text
-postgresql://devsecops:<POSTGRES_PASSWORD>@postgres:5432/devsecops_dashboard?schema=public
-```
-
-## Runtime Settings
-
-| Variable | Default | Notes |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `APP_PORT` | `3000` | Host port published by Compose. |
-| `RUN_DATABASE_MIGRATIONS` | `true` | Runs Prisma deploy on container start. |
-| `RUN_DATABASE_SEED` | `false` | Production seed opt-in. |
-| `SEED_DASHBOARD_ENDPOINT` | `true` | Adds the dashboard health endpoint during seed. Installers for shared hosts may set this to `false`. |
-| `MONITOR_ALLOW_PRIVATE_NETWORKS` | `false` | Set `true` only for trusted homelab/internal monitoring. |
-| `MONITOR_REDIRECT_LIMIT` | `3` | Redirects are manually followed and each target is validated. |
-| `MONITORING_DEFAULT_TIMEOUT_MS` | `5000` | Default HTTP/TLS monitor timeout. |
-| `ENABLE_DOCKER_SOCKET` | `false` | Required acknowledgement for Docker socket use. |
-| `DOCKER_SOCKET_PATH` | empty | Used only with the Docker socket override. |
-| `DOCKER_SOCKET_GID` | empty | Host Docker socket group id. The installer detects it for non-root app containers. |
-| `UBUNTU_NSPAWN_DOCKER_ENDPOINT` | empty | Optional Docker endpoint for homelab nspawn setups. |
+| `APP_PORT` | `3000` | Host port for the web UI |
+| `APP_BIND` | `0.0.0.0` | Host interface to bind. Use `127.0.0.1` behind a local reverse proxy |
+| `AUTH_URL` | empty | Public URL. Empty means any hostname is accepted |
 
-## Agent Seed Variables
+## Compose
 
-| Variable | Notes |
+| Variable | Purpose |
 | --- | --- |
-| `PRIMARY_AGENT_ID` / `PRIMARY_AGENT_TOKEN` | Generic default agent credential pair. |
-| `SECONDARY_AGENT_ID` / `SECONDARY_AGENT_TOKEN` | Optional second agent credential pair. |
-| `CACHYOS_AGENT_*` and `UBUNTU_NSPAWN_AGENT_*` | Backwards-compatible legacy names. Prefer generic names for new installs. |
+| `COMPOSE_PROJECT_NAME` | Stack name (`devsecopsdash`) |
+| `COMPOSE_FILE` | Add `:docker-compose.docker-socket.yml` to enable container management on this host |
+| `DOCKER_SOCKET_GID` | Group id of `/var/run/docker.sock` |
+| `DASHBOARD_IMAGE` | Image to run. Default `ghcr.io/claritys11/devsecops-dashboard:latest` |
 
-## Development-Only Or Optional
+## Monitoring
 
-- `POSTGRES_HOST_PORT` is used by `docker-compose.dev.yml` to publish PostgreSQL locally.
-- `SEED_DASHBOARD_ENDPOINT=false` skips the default self-monitor endpoint.
-- `SEED_HOMELAB_EXAMPLES=true` adds example private-network endpoints and requires `MONITOR_ALLOW_PRIVATE_NETWORKS=true`.
-- `DASHBOARD_HEALTH_URL` and `COOLIFY_STATUS_URL` are used by seed data only.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MONITOR_ALLOW_PRIVATE_NETWORKS` | `false` | Allow 10/8, 172.16/12, 192.168/16, loopback and link-local targets. Cloud metadata IPs stay blocked |
+| `MONITORING_DEFAULT_TIMEOUT_MS` | `5000` | Default request timeout |
+| `MONITOR_REDIRECT_LIMIT` | `3` | Redirects followed. Each hop is re-validated |
+| `MONITOR_WORKER_POLL_SECONDS` | `15` | How often the worker looks for due checks |
+| `MONITOR_WORKER_BATCH_SIZE` | `10` | Checks per poll |
+| `METRICS_RETENTION_DAYS` | `30` | Server metric history kept |
 
-## Preflight
+## Alerts
 
-```bash
-npm run preflight
-npm run preflight -- --production
-```
+| Variable | Default |
+| --- | --- |
+| `ALERT_CPU_CRITICAL_PERCENT` | `90` |
+| `ALERT_MEMORY_CRITICAL_PERCENT` | `90` |
+| `ALERT_DISK_CRITICAL_PERCENT` | `85` |
+| `ALERT_SSL_EXPIRING_DAYS` | `14` |
+| `ALERT_ENDPOINT_FAILURE_THRESHOLD` | `3` (failed checks in a row) |
+| `AGENT_STALE_AFTER_MINUTES` | `2` |
+| `SERVER_OFFLINE_AFTER_MINUTES` | `10` |
 
-Preflight detects missing required variables, placeholder secrets, malformed URLs, inconsistent localhost ports, unsafe production Docker socket settings, invalid `SEED_ENDPOINTS_JSON`, and homelab seed/private-network mismatches.
+## Agents
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PRIMARY_SERVER_NAME` / `PRIMARY_AGENT_ID` / `PRIMARY_AGENT_TOKEN` | empty | Pre-provisioned agent for the dashboard host (set by the installer) |
+| `SECONDARY_SERVER_NAME` / `SECONDARY_AGENT_ID` / `SECONDARY_AGENT_TOKEN` | empty | Optional second pre-provisioned agent |
+| `AGENT_MAX_CLOCK_SKEW_SECONDS` | `300` | Allowed clock difference |
+| `AGENT_NONCE_RETENTION_MINUTES` | `30` | Replay-protection window |
+| `AGENT_MAX_BODY_BYTES` | `16384` | Maximum payload |
+
+Agents for other servers are created in the UI and need no variables.
+
+## Startup
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RUN_DATABASE_MIGRATIONS` | `true` | Apply migrations on start |
+| `RUN_DATABASE_SEED` | `true` | Run the idempotent bootstrap (admin, pre-provisioned agents, `SEED_ENDPOINTS_JSON`) |
+| `ADMIN_RESET_PASSWORD` | `false` | Reset the admin password to `ADMIN_PASSWORD` on start |
+| `SEED_ENDPOINTS_JSON` | empty | JSON array of `{ "name", "url", "expectedStatus"?, "intervalSeconds"? }` created once |
+| `SKIP_PREFLIGHT` | `false` | Skip configuration validation (not recommended) |
+
+## Local development
+
+`npm run setup` writes a development `.env` with `DATABASE_URL` pointing at `localhost:5433`, which is the Postgres port published by `docker-compose.dev.yml`.

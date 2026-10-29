@@ -34,15 +34,10 @@ const integerSchema = (fallback: number, min = 1, max = Number.MAX_SAFE_INTEGER)
       return parsed;
     });
 
-const optionalUrlSchema = z
-  .string()
-  .optional()
-  .refine((value) => !value || isHttpUrl(value), "Expected an HTTP or HTTPS URL");
-
 export const appEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().url(),
-  AUTH_URL: z.string().url(),
+  AUTH_URL: z.string().url().optional().or(z.literal("")),
   AUTH_SECRET: z.string().min(32),
   ADMIN_EMAIL: z.string().email(),
   ADMIN_PASSWORD: z.string().min(1),
@@ -54,14 +49,11 @@ export const appEnvSchema = z.object({
   HOSTNAME: z.string().default("0.0.0.0"),
   RUN_DATABASE_MIGRATIONS: booleanSchema,
   RUN_DATABASE_SEED: booleanSchema,
-  SEED_DASHBOARD_ENDPOINT: booleanSchema,
-  SEED_HOMELAB_EXAMPLES: booleanSchema,
+  ADMIN_RESET_PASSWORD: booleanSchema,
   SEED_ENDPOINTS_JSON: z.string().optional(),
   DOCKER_SOCKET_PATH: z.string().optional(),
   ENABLE_DOCKER_SOCKET: booleanSchema,
   UBUNTU_NSPAWN_DOCKER_ENDPOINT: z.string().optional(),
-  DASHBOARD_HEALTH_URL: optionalUrlSchema,
-  COOLIFY_STATUS_URL: optionalUrlSchema,
   MONITORING_DEFAULT_TIMEOUT_MS: integerSchema(5000, 500, 30000),
   MONITOR_WORKER_POLL_SECONDS: integerSchema(15, 5, 3600),
   MONITOR_WORKER_LOCK_SECONDS: integerSchema(45, 5, 3600),
@@ -113,7 +105,7 @@ export function validateAppEnv(source: NodeJS.ProcessEnv = process.env, mode: Va
 
 export function findUnsafeEnvSettings(source: NodeJS.ProcessEnv, mode: ValidationMode) {
   const problems: string[] = [];
-  const requiredInProduction = ["DATABASE_URL", "AUTH_URL", "AUTH_SECRET", "ADMIN_EMAIL", "ADMIN_PASSWORD", "POSTGRES_PASSWORD"];
+  const requiredInProduction = ["DATABASE_URL", "AUTH_SECRET", "ADMIN_EMAIL", "ADMIN_PASSWORD", "POSTGRES_PASSWORD"];
 
   if (mode === "production") {
     for (const key of requiredInProduction) {
@@ -134,11 +126,7 @@ export function findUnsafeEnvSettings(source: NodeJS.ProcessEnv, mode: Validatio
     }
   }
 
-  if (mode === "production" && source.MONITOR_ALLOW_PRIVATE_NETWORKS !== "true" && source.SEED_HOMELAB_EXAMPLES === "true") {
-    problems.push("SEED_HOMELAB_EXAMPLES requires MONITOR_ALLOW_PRIVATE_NETWORKS=true because homelab examples target private host networks.");
-  }
-
-  if (source.APP_PORT && source.AUTH_URL) {
+  if (source.APP_PORT && source.AUTH_URL && isHttpUrl(source.AUTH_URL)) {
     const authPort = new URL(source.AUTH_URL).port || (source.AUTH_URL.startsWith("https://") ? "443" : "80");
     if (source.AUTH_URL.includes("localhost") && authPort !== source.APP_PORT) {
       problems.push(`AUTH_URL port ${authPort} does not match APP_PORT ${source.APP_PORT}.`);

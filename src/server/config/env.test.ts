@@ -46,9 +46,10 @@ test("placeholder detection covers legacy and generic agent tokens", () => {
   assert.equal(isPlaceholderSecret("real-agent-token-value"), false);
 });
 
-test("homelab examples require explicit private network opt-in in production", () => {
-  const problems = findUnsafeEnvSettings({ ...validEnv, SEED_HOMELAB_EXAMPLES: "true" }, "production");
-  assert.match(problems.join("\n"), /SEED_HOMELAB_EXAMPLES requires MONITOR_ALLOW_PRIVATE_NETWORKS=true/);
+test("AUTH_URL is optional so the dashboard works from any hostname", () => {
+  const { AUTH_URL: _unused, ...withoutUrl } = validEnv;
+  void _unused;
+  assert.doesNotThrow(() => validateAppEnv(withoutUrl as NodeJS.ProcessEnv, "production"));
 });
 
 test("placeholder detection only applies to secret-like keys", () => {

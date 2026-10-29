@@ -7,3 +7,5 @@ coverage
 *.log
 prisma/dev.db
 *.tsbuildinfo
+agent/dist/
+.playwright-mcp/
