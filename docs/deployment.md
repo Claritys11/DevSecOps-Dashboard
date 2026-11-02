@@ -83,6 +83,12 @@ DOCKER_SOCKET_GID="975"   # stat -c %g /var/run/docker.sock
 
 Then run `docker compose up -d`. For other hosts, expose the Docker API on a trusted network and set **Containers → Remote Docker API** on that server in the UI.
 
+### Where action reasons are stored
+
+Reasons for container actions are stored in the database and shown on the container's page and on the Activity page. For containers started by Compose, they are also appended to `.devsecops-actions.log` in the Compose folder, with the fields time, action, container, user and reason separated by tabs.
+
+The dashboard writes this file with a short-lived `busybox` container that mounts only that folder, has no network and is removed straight away. The image is pulled on first use. If the write fails, for example because the folder no longer exists, the action still completes and the page shows why the file was not updated. Add the file to `.gitignore` if the folder is a git repository, or set `CONTAINER_ACTION_LOG_IN_PROJECT=false` to turn it off. Writing the file is not supported on systemd-nspawn servers.
+
 ## Running next to other stacks
 
 The installer picks a free port and a free Compose project name, so it does not collide with existing stacks. Check what is already listening:

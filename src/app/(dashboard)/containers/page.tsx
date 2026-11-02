@@ -12,11 +12,12 @@ import { Status, Tag } from "@/components/ui/status";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContainerActions } from "@/components/containers/container-actions";
 import { protectionLabel } from "@/components/containers/protection";
+import { formatPorts, parseComposeLabels } from "@/server/services/container-details";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Containers" };
 
-type Row = { id: string; name: string; image: string; state: string; status: string; protectionLevel: string; protectionOverride: boolean };
+type Row = { id: string; name: string; image: string; state: string; status: string; protectionLevel: string; protectionOverride: boolean; ports?: unknown; labels?: unknown };
 
 function explainDockerError(message: string) {
   if (/ENOENT|EACCES|docker\.sock/.test(message)) {
@@ -42,7 +43,7 @@ export default async function ContainersPage() {
         const cached = await prisma.containerRecord.findMany({ where: { serverId: server.id }, orderBy: { name: "asc" } });
         return {
           server,
-          containers: cached.map((record) => ({ id: record.dockerId, name: record.name, image: record.image, state: record.state, status: record.status, protectionLevel: record.protectionLevel, protectionOverride: record.protectionOverride })),
+          containers: cached.map((record) => ({ id: record.dockerId, name: record.name, image: record.image, state: record.state, status: record.status, protectionLevel: record.protectionLevel, protectionOverride: record.protectionOverride, ports: record.ports, labels: record.labels })),
           live: false,
           warning: explainDockerError(error instanceof Error ? error.message : "Docker unavailable")
         };
@@ -76,11 +77,14 @@ export default async function ContainersPage() {
                 <p className="px-4 py-6 text-sm text-muted">No containers found.</p>
               ) : (
                 <ul className="divide-y">
-                  {result.containers.map((container) => (
+                  {result.containers.map((container) => {
+                    const ports = formatPorts(container.ports);
+                    const compose = parseComposeLabels(container.labels);
+                    return (
                     <li key={container.id} className="grid gap-2 px-4 py-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_13rem] md:items-center">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="truncate font-medium">{container.name}</p>
+                          <Link href={`/containers/${result.server.id}/${encodeURIComponent(container.id)}`} className="truncate font-medium hover:underline">{container.name}</Link>
                           {container.protectionLevel === "PROTECTED" && (
                             <span title="Protected: read-only in the dashboard" className="text-muted">
                               <Lock className="size-3.5" />
@@ -88,10 +92,12 @@ export default async function ContainersPage() {
                           )}
                         </div>
                         <p className="truncate font-mono text-2xs text-muted">{container.image}</p>
+                        {compose?.project && <p className="truncate text-2xs text-muted">Compose project {compose.project}</p>}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Status tone={containerTone(container.state, container.status)} label={container.status || container.state} />
                         <Tag>{protectionLabel(container.protectionLevel)}{container.protectionOverride ? " (set manually)" : ""}</Tag>
+                        {ports.length > 0 && <p className="w-full truncate font-mono text-2xs text-muted" title={ports.join(", ")}>{ports.join(", ")}</p>}
                       </div>
                       <ContainerActions
                         serverId={result.server.id}
@@ -101,7 +107,8 @@ export default async function ContainersPage() {
                         canProtect={hasRole(role, "ADMIN")}
                       />
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </Section>

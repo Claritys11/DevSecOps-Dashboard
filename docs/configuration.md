@@ -64,6 +64,12 @@ Production start-up refuses placeholder values such as `change-me-*`.
 
 Agents for other servers are created in the UI and need no variables.
 
+## Containers
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CONTAINER_ACTION_LOG_IN_PROJECT` | `true` | Also append container action reasons to `.devsecops-actions.log` in the Compose folder |
+
 ## Startup
 
 | Variable | Default | Purpose |

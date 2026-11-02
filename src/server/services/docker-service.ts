@@ -4,6 +4,7 @@ import { ContainerProtectionLevel, ServerRuntime, type Prisma } from "@prisma/cl
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { evaluateContainerAlert } from "@/server/services/alert-service";
+import { demuxDockerLogs, formatActionLogLine, isSafeProjectDir, parseComposeLabels, PROJECT_LOG_FILE, toContainerDetails } from "@/server/services/container-details";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,6 +86,16 @@ export async function listContainers(serverId: string) {
   });
 }
 
+export async function inspectContainer(serverId: string, containerId: string) {
+  const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
+  if (server.runtime === ServerRuntime.SYSTEMD_NSPAWN && !server.dockerEndpoint) {
+    if (!/^[a-zA-Z0-9][\w.-]*$/.test(containerId)) throw new Error("Invalid container id");
+    const output = await runNspawnDocker(getMachineName(server.machinePath, server.hostname), ["inspect", containerId]);
+    return toContainerDetails(JSON.parse(output)[0]);
+  }
+  return toContainerDetails(await createDockerClient(server.dockerEndpoint).getContainer(containerId).inspect());
+}
+
 export async function getContainerLogs(serverId: string, containerId: string) {
   const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
   if (server.runtime === ServerRuntime.SYSTEMD_NSPAWN && !server.dockerEndpoint) {
@@ -98,7 +109,70 @@ export async function getContainerLogs(serverId: string, containerId: string) {
     tail: 200,
     timestamps: true
   });
-  return logs.toString("utf8").replace(/\u0000|\u0001|\u0002|\u0003/g, "");
+  return demuxDockerLogs(logs);
+}
+
+export type ReasonFileResult = { written: true; path: string } | { written: false; reason: string };
+
+const HELPER_IMAGE = "busybox:1.37";
+const HELPER_LABEL = "devsecops-dashboard.helper";
+// Runs inside the helper, where /project is the only host path visible, so a symlink in the folder cannot reach further.
+const APPEND_SCRIPT = `printf '%s\\n' "$LINE" >> "/project/${PROJECT_LOG_FILE}" && chown "$(stat -c %u:%g /project)" "/project/${PROJECT_LOG_FILE}" && chmod 640 "/project/${PROJECT_LOG_FILE}"`;
+
+async function appendThroughHelper(endpoint: string | null, dir: string, line: string) {
+  const docker = createDockerClient(endpoint);
+  await docker.getImage(HELPER_IMAGE).inspect().catch(async () => {
+    const stream = await docker.pull(HELPER_IMAGE);
+    await new Promise<void>((resolve, reject) => docker.modem.followProgress(stream, (error) => (error ? reject(error) : resolve())));
+  });
+
+  const helper = await docker.createContainer({
+    Image: HELPER_IMAGE,
+    Cmd: ["sh", "-c", APPEND_SCRIPT],
+    Env: [`LINE=${line}`],
+    User: "0",
+    NetworkDisabled: true,
+    Labels: { [HELPER_LABEL]: "true" },
+    HostConfig: {
+      // Mounts, unlike Binds, fails on a missing folder instead of creating it.
+      Mounts: [{ Type: "bind", Source: dir, Target: "/project" }],
+      ReadonlyRootfs: true,
+      CapDrop: ["ALL"],
+      CapAdd: ["CHOWN", "DAC_OVERRIDE", "FOWNER"],
+      SecurityOpt: ["no-new-privileges"]
+    }
+  });
+  try {
+    await helper.start();
+    const { StatusCode } = await helper.wait();
+    if (StatusCode !== 0) throw new Error(`could not write to the folder (exit ${StatusCode})`);
+  } finally {
+    await helper.remove({ force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Appends an action to the log file in the container's Compose folder. The audit log stays the
+ * source of truth, so this never throws: a failed write must not fail the action it describes.
+ */
+export async function recordActionInProject(input: { serverId: string; containerName: string; labels: unknown; action: string; user: string; reason: string }): Promise<ReasonFileResult> {
+  if (process.env.CONTAINER_ACTION_LOG_IN_PROJECT === "false") return { written: false, reason: "Writing to project folders is turned off." };
+
+  const dir = parseComposeLabels(input.labels)?.workingDir;
+  if (!dir) return { written: false, reason: "This container is not part of a Compose project, so it has no folder." };
+  if (!isSafeProjectDir(dir)) return { written: false, reason: `Skipped the unusual folder path ${dir}.` };
+
+  try {
+    const server = await prisma.server.findUniqueOrThrow({ where: { id: input.serverId } });
+    if (server.runtime === ServerRuntime.SYSTEMD_NSPAWN && !server.dockerEndpoint) {
+      return { written: false, reason: "Writing to project folders is not supported on systemd-nspawn servers." };
+    }
+    const line = formatActionLogLine({ at: new Date(), action: input.action, containerName: input.containerName, user: input.user, reason: input.reason });
+    await appendThroughHelper(server.dockerEndpoint, dir, line);
+    return { written: true, path: `${dir.replace(/\/+$/, "")}/${PROJECT_LOG_FILE}` };
+  } catch (error) {
+    return { written: false, reason: `Could not write to ${dir}: ${error instanceof Error ? error.message : "unknown error"}` };
+  }
 }
 
 export async function restartContainer(serverId: string, containerId: string) {
@@ -145,7 +219,7 @@ async function listDockerodeContainers(endpoint: string | null, runtime: ServerR
 
   const docker = createDockerClient(endpoint);
   const containers = await docker.listContainers({ all: true });
-  return containers.map((container) => {
+  return containers.filter((container) => !container.Labels?.[HELPER_LABEL]).map((container) => {
     const name = normalizeContainerName(container.Names);
     return {
       id: container.Id,
