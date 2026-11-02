@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { MoreHorizontal, RotateCcw, ScrollText, ShieldCheck, Square, Trash2 } from "lucide-react";
+import { CheckCircle2, Info, MoreHorizontal, RotateCcw, ShieldCheck, Square, Trash2 } from "lucide-react";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, FormError, Input, Select, Textarea } from "@/components/ui/field";
@@ -11,6 +11,7 @@ import { api } from "@/lib/api-client";
 import { PROTECTION_LEVELS } from "@/components/containers/protection";
 
 type Action = "restart" | "stop" | "delete" | "protection";
+type ReasonFile = { written: true; path: string } | { written: false; reason: string };
 
 const copy: Record<Exclude<Action, "protection">, { title: string; verb: string; pending: string; body: string }> = {
   restart: { title: "Restart", verb: "Restart container", pending: "Restarting", body: "The container stops and starts again. Expect a few seconds of downtime." },
@@ -23,13 +24,15 @@ export function ContainerActions({
   container,
   canOperate,
   canDelete,
-  canProtect
+  canProtect,
+  onDetailPage = false
 }: {
   serverId: string;
   container: { id: string; name: string; state: string; protectionLevel: string; protectionOverride: boolean };
   canOperate: boolean;
   canDelete: boolean;
   canProtect: boolean;
+  onDetailPage?: boolean;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<Action | null>(null);
@@ -39,6 +42,7 @@ export function ContainerActions({
   const [level, setLevel] = useState(container.protectionLevel);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<ReasonFile | null>(null);
   const isProtected = container.protectionLevel === "PROTECTED";
   const base = `/api/servers/${serverId}/containers/${encodeURIComponent(container.id)}`;
 
@@ -48,6 +52,7 @@ export function ContainerActions({
     setConfirmName("");
     setLevel(container.protectionLevel);
     setError(null);
+    setSaved(null);
     setAction(next);
   }
 
@@ -58,11 +63,19 @@ export function ContainerActions({
     setError(null);
     const result =
       action === "protection"
-        ? await api(`${base}/protection`, "PATCH", { protectionLevel: level, reason })
-        : await api(`${base}/${action}`, action === "delete" ? "DELETE" : "POST", { reason, confirmName: action === "delete" ? confirmName : undefined, idempotencyKey: crypto.randomUUID() });
+        ? await api<{ reasonFile?: ReasonFile }>(`${base}/protection`, "PATCH", { protectionLevel: level, reason })
+        : await api<{ reasonFile?: ReasonFile }>(`${base}/${action}`, action === "delete" ? "DELETE" : "POST", { reason, confirmName: action === "delete" ? confirmName : undefined, idempotencyKey: crypto.randomUUID() });
     setPending(false);
     if (!result.ok) return setError(result.error);
+    if (result.data.reasonFile) setSaved(result.data.reasonFile);
+    else finish();
+  }
+
+  function finish() {
+    const deleted = action === "delete";
     setAction(null);
+    setSaved(null);
+    if (deleted && onDetailPage) router.push("/containers");
     router.refresh();
   }
 
@@ -71,9 +84,11 @@ export function ContainerActions({
 
   return (
     <div className="relative flex items-center justify-end gap-1">
-      <Link href={`/containers/${serverId}/${encodeURIComponent(container.id)}`} className={buttonClass({ variant: "ghost", size: "sm" })}>
-        <ScrollText className="size-3.5" /> Logs
-      </Link>
+      {!onDetailPage && (
+        <Link href={`/containers/${serverId}/${encodeURIComponent(container.id)}`} className={buttonClass({ variant: "ghost", size: "sm" })}>
+          Details
+        </Link>
+      )}
       {canOperate && !isProtected && (
         <Button size="sm" variant="ghost" onClick={() => open("restart")}>
           <RotateCcw className="size-3.5" /> Restart
@@ -102,10 +117,13 @@ export function ContainerActions({
 
       <Dialog
         open={action !== null}
-        onClose={() => setAction(null)}
-        title={action === "protection" ? `Protection for ${container.name}` : `${details?.title} ${container.name}?`}
-        description={action === "protection" ? "Protected containers cannot be restarted, stopped or deleted from the dashboard." : details?.body}
+        onClose={saved ? finish : () => setAction(null)}
+        title={saved ? "Done" : action === "protection" ? `Protection for ${container.name}` : `${details?.title} ${container.name}?`}
+        description={saved ? undefined : action === "protection" ? "Protected containers cannot be restarted, stopped or deleted from the dashboard." : details?.body}
         footer={
+          saved ? (
+            <Button variant="primary" onClick={finish}>Close</Button>
+          ) : (
           <>
             <Button variant="ghost" onClick={() => setAction(null)}>Cancel</Button>
             <Button
@@ -119,8 +137,23 @@ export function ContainerActions({
               {action === "protection" ? "Save protection" : details?.verb}
             </Button>
           </>
+          )
         }
       >
+        {saved ? (
+          <div className="flex gap-2.5 text-sm">
+            {saved.written ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" /> : <Info className="mt-0.5 size-4 shrink-0 text-muted" />}
+            {saved.written ? (
+              <p>
+                The reason is saved in the activity log and in <span className="break-all font-mono text-xs">{saved.path}</span>
+              </p>
+            ) : (
+              <p>
+                The reason is saved in the activity log only. <span className="text-muted">{saved.reason}</span>
+              </p>
+            )}
+          </div>
+        ) : (
         <form id={`container-action-${container.id}`} onSubmit={submit} className="space-y-4">
           {action === "protection" && (
             <Field label="Protection level" hint={PROTECTION_LEVELS.find((item) => item.value === level)?.description}>
@@ -131,7 +164,7 @@ export function ContainerActions({
               </Select>
             </Field>
           )}
-          <Field label="Reason" hint="Saved in the activity log with your name.">
+          <Field label="Reason" hint="Saved with your name in the activity log and in the container's Compose folder.">
             <Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "restart" ? "Picking up new config" : "Why are you doing this?"} required minLength={3} maxLength={500} autoFocus />
           </Field>
           {action === "delete" && (
@@ -141,6 +174,7 @@ export function ContainerActions({
           )}
           <FormError>{error}</FormError>
         </form>
+        )}
       </Dialog>
     </div>
   );

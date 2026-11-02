@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/server/auth/guards";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/server/services/audit-service";
+import { recordActionInProject } from "@/server/services/docker-service";
 
 const protectionSchema = z.object({
   protectionLevel: z.nativeEnum(ContainerProtectionLevel),
@@ -35,6 +36,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ se
     }
   });
 
+  const reasonFile = await recordActionInProject({
+    serverId,
+    containerName: current.name,
+    labels: current.labels,
+    action: `protection ${current.protectionLevel} -> ${updated.protectionLevel}`,
+    user: authResult.session.user.email ?? authResult.session.user.id,
+    reason: parsed.data.reason
+  });
+
   await writeAuditLog({
     userId: authResult.session.user.id,
     action: "SETTINGS_UPDATE",
@@ -45,10 +55,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ se
       containerName: current.name,
       from: current.protectionLevel,
       to: updated.protectionLevel,
-      reason: parsed.data.reason
+      reason: parsed.data.reason,
+      reasonFile
     },
     request
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({ ...updated, reasonFile });
 }

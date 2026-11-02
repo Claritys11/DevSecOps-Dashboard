@@ -2,6 +2,17 @@
 
 This project uses a changelog inspired by Keep a Changelog and versioning compatible with SemVer once public releases begin.
 
+## Unreleased
+
+### Containers
+- Container detail page: published ports, Compose project, folder and files, status, volumes, networks, environment variable names (values are never shown) and logs.
+- The container list shows published ports and the Compose project.
+- Reasons for restart, stop, delete and protection changes appear on the container's page, and are appended to `.devsecops-actions.log` in its Compose folder. Set `CONTAINER_ACTION_LOG_IN_PROJECT=false` to turn the file off.
+- Failed container actions are recorded in the activity log.
+
+### Fixes
+- Container logs no longer show stray characters from Docker's stream headers.
+
 ## 1.0.0
 
 ### Install and operations
