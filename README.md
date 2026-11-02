@@ -6,7 +6,7 @@ Self-hosted monitoring for the machines and services you run yourself. It shows 
 
 - **Servers**: CPU, memory, disk, load and network from a tiny Go agent (no dependencies, ~6 MB).
 - **Endpoints**: HTTP(S) uptime, response time, status code and TLS certificate expiry.
-- **Containers**: Docker state and logs, plus restart, stop and delete with a required reason and an audit trail.
+- **Containers**: ports, Compose folder and files, status, volumes, networks and logs for each container, plus restart, stop and delete with a required reason and an audit trail.
 - **Alerts**: open and close on their own based on thresholds, with acknowledgement.
 - **Users and roles**: viewer, maintainer and admin.
 
@@ -75,6 +75,26 @@ Open **Endpoints**, click **Add endpoint**, paste a URL and save. The first chec
 
 Local addresses (`192.168.x.x`, `10.x.x.x`, `localhost`) are allowed when you answered yes to the installer's local network question. This is stored as `MONITOR_ALLOW_PRIVATE_NETWORKS=true` in `.env`. Cloud metadata addresses are always blocked.
 
+## Inspect a container
+
+Open **Containers** and click a container's name. Its page shows:
+
+- published ports, such as `127.0.0.1:27017 → 27017/tcp`,
+- the Compose project and service, plus the folder and files that define it,
+- status, restart count, restart policy and resource limits,
+- volumes, networks and the last 200 log lines,
+- environment variable names. Values are never shown, because they often contain passwords.
+
+Every restart, stop, delete and protection change asks for a reason. The reason is saved in three places:
+
+| Where | Notes |
+| --- | --- |
+| Database | The main record, shown on the **Activity** page |
+| The container's page | Under **Actions and reasons**, and kept when Compose recreates the container |
+| `.devsecops-actions.log` in the Compose folder | Tab-separated time, action, container, user and reason |
+
+Containers not started by Compose have no folder, so their reasons are only saved in the first two places. If the file cannot be written, the action still completes and the page says why. If the folder is a git repository, add `.devsecops-actions.log` to its `.gitignore`. Set `CONTAINER_ACTION_LOG_IN_PROJECT=false` in `.env` to turn the file off.
+
 ## Day-to-day
 
 ```bash
@@ -114,6 +134,7 @@ Agents push outbound to the dashboard, so monitored machines do not need any ope
 
 - Mounting the Docker socket (`--with-docker`) gives the dashboard root-equivalent access to that host. Only enable it if you need container management.
 - Protected containers (databases, proxies, the dashboard itself) are read-only in the UI. Every container action requires a reason and is logged.
+- To write the reason file, the dashboard starts a short-lived `busybox` container that mounts only the Compose folder, has no network and is removed straight away.
 - Sign-in is rate limited. Passwords are hashed with Argon2id.
 - Serve the dashboard over HTTPS (reverse proxy) if it is reachable from outside your network.
 
